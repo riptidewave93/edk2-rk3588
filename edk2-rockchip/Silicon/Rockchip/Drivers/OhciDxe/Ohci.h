@@ -13,7 +13,9 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 #include <Uefi.h>
 
-#include <Protocol/UsbHostController.h>
+#include <Pi/PiPeiCis.h>
+#include <Ppi/UsbHostController.h>
+
 #include <Library/DmaLib.h>
 
 #include <Guid/EventGroup.h>
@@ -39,6 +41,7 @@ typedef struct _USB_OHCI_HC_DEV USB_OHCI_HC_DEV;
 #include "Descriptor.h"
 #include "OhciDebug.h"
 #include "ComponentName.h"
+#include "UsbHostController.h"
 
 extern EFI_DRIVER_BINDING_PROTOCOL   gOhciDriverBinding;
 extern EFI_COMPONENT_NAME_PROTOCOL   gOhciComponentName;
