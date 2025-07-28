@@ -13,6 +13,7 @@ function _help(){
     echo "  --open-tfa ENABLE           Use open-source TF-A submodule. Default: ${OPEN_TFA}"
     echo "  -C, --clean                 Clean workspace and output."
     echo "  -D, --distclean             Clean up all files that are not in repo."
+    echo "  --secureboot                Enable secure boot. Default: ${SECUREBOOT}"
     echo "  --tfa-flags \"FLAGS\"         Flags appended to open TF-A build process."
     echo "  --edk2-flags \"FLAGS\"        Flags appended to the EDK2 build process."
     echo "  -h, --help                  Show this help."
@@ -143,6 +144,35 @@ function _build(){
     make -C "${ROOTDIR}/edk2/BaseTools"
     source "${ROOTDIR}/edk2/edksetup.sh"
 
+    if "${SECUREBOOT}"; then
+        if ! [ -d "${ROOTDIR}/keys" ]; then
+            mkdir -p "${ROOTDIR}/keys"
+        fi
+        # Download keys if not present
+        if ! [ -f "${ROOTDIR}/keys/pk.cer " ]; then
+            openssl req -new -x509 -newkey rsa:2048 -subj "/CN=Rockchip Platform Key/" -keyout /dev/null -outform DER -out keys/pk.cer -days 7300 -nodes -sha256
+        fi
+        if ! [ -f "${ROOTDIR}/keys/ms_kek.cer" ]; then
+            curl -L https://go.microsoft.com/fwlink/?LinkId=321185 -o keys/ms_kek.cer
+        fi
+        if ! [ -f "${ROOTDIR}/keys/ms_db1.cer" ]; then
+            curl -L https://go.microsoft.com/fwlink/?LinkId=321192 -o keys/ms_db1.cer
+        fi
+        if ! [ -f "${ROOTDIR}/keys/ms_db2.cer" ]; then
+            curl -L https://go.microsoft.com/fwlink/?LinkId=321194 -o keys/ms_db2.cer
+        fi
+        if ! [ -f "${ROOTDIR}/keys/arm64_dbx.bin" ]; then
+            curl -L https://uefi.org/sites/default/files/resources/dbxupdate_arm64.bin -o keys/arm64_dbx.bin
+        fi
+        EDK2_FLAGS="${EDK2_FLAGS} \
+              -D DEFAULT_KEYS=TRUE \
+              -D PK_DEFAULT_FILE=keys/pk.cer \
+              -D KEK_DEFAULT_FILE1=keys/ms_kek.cer \
+              -D DB_DEFAULT_FILE1=keys/ms_db1.cer \
+              -D DB_DEFAULT_FILE2=keys/ms_db2.cer \
+              -D DBX_DEFAULT_FILE1=keys/arm64_dbx.bin \
+              -D SECURE_BOOT_ENABLE=TRUE"
+    fi
     build \
         -s \
         -n 0 \
@@ -182,11 +212,12 @@ EDK2_FLAGS=""
 CLEAN=false
 DISTCLEAN=false
 OUTDIR="${PWD}"
+SECUREBOOT=false
 
 #
 # Get options
 #
-OPTS=$(getopt -o "d:r:t:CDh" -l "device:,release:,toolchain:,open-tfa:,tfa-flags:,edk2-flags:,clean,distclean,help" -n build.sh -- "${@}") || _help $?
+OPTS=$(getopt -o "d:r:t:CDh" -l "device:,release:,toolchain:,open-tfa:,tfa-flags:,edk2-flags:,clean,distclean,secure-boot,help" -n build.sh -- "${@}") || _help $?
 eval set -- "${OPTS}"
 while true; do
     case "${1}" in
@@ -198,6 +229,7 @@ while true; do
         --edk2-flags) EDK2_FLAGS="${2}"; shift 2 ;;
         -C|--clean) CLEAN=true; shift ;;
         -D|--distclean) DISTCLEAN=true; shift ;;
+        --secure-boot) SECUREBOOT=true; shift ;;
         -h|--help) _help 0; shift ;;
         --) shift; break ;;
         *) break ;;
@@ -231,6 +263,11 @@ if [ ${MACHINE_TYPE} != 'aarch64' ]; then
 fi
 
 GIT_COMMIT="$(git describe --tags --always)" || GIT_COMMIT="unknown"
+
+# Were we an untagged commit? If so, use date to generate version (we are dirty)
+if [ "$GIT_COMMIT" == "$(git rev-parse --short HEAD)" ]; then
+    GIT_COMMIT="edk2-rk3588-$(date +%Y%m%d)-${GIT_COMMIT}"
+fi
 
 export WORKSPACE="${OUTDIR}/workspace"
 [ -d "${WORKSPACE}" ] || mkdir "${WORKSPACE}"
