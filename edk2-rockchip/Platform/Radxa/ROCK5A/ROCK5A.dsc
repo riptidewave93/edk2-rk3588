@@ -96,6 +96,11 @@
   gRK3588TokenSpaceGuid.PcdHasOnBoardFanOutput|TRUE
 
   #
+  # Default to DTB Only
+  #
+  gRK3588TokenSpaceGuid.PcdConfigTableModeDefault|0x00000002
+
+  #
   # Display support flags and default values
   #
   gRK3588TokenSpaceGuid.PcdDisplayConnectors|{CODE({
