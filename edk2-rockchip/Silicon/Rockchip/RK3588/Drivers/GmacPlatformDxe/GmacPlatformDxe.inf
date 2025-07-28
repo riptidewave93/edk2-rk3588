@@ -23,6 +23,7 @@
 
 [Packages]
   CryptoPkg/CryptoPkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
   NetworkPkg/NetworkPkg.dec
@@ -34,6 +35,7 @@
   BaseCryptLib
   DebugLib
   DevicePathLib
+  FdtLib
   IoLib
   NetLib
   OtpLib
@@ -46,6 +48,10 @@
   gDwcEqosPlatformDeviceProtocolGuid
   gEfiDevicePathProtocolGuid
 
+[Guids]
+  gEfiEventReadyToBootGuid
+  gFdtTableGuid
+
 [Pcd]
   gRK3588TokenSpaceGuid.PcdGmac0Supported
   gRK3588TokenSpaceGuid.PcdGmac1Supported
@@ -53,6 +59,7 @@
   gRK3588TokenSpaceGuid.PcdGmac0RxDelay
   gRK3588TokenSpaceGuid.PcdGmac1TxDelay
   gRK3588TokenSpaceGuid.PcdGmac1RxDelay
+  gRK3588TokenSpaceGuid.PcdConfigTableMode
 
 [Depex]
   TRUE
