@@ -101,6 +101,12 @@
   gRK3588TokenSpaceGuid.PcdConfigTableModeDefault|0x00000002
 
   #
+  # Default to HTTP boot only, no IPv6
+  #
+  gRockchipTokenSpaceGuid.PcdNetworkStackIpv6EnabledDefault|FALSE
+  gRockchipTokenSpaceGuid.PcdNetworkStackPxeBootEnabledDefault|FALSE
+
+  #
   # Display support flags and default values
   #
   gRK3588TokenSpaceGuid.PcdDisplayConnectors|{CODE({
