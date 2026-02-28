@@ -16,6 +16,8 @@ function _help(){
     echo "  --skip-patchsets            Skip applying upstream submodule patchsets during development."
     echo "  -C, --clean                 Clean workspace and output."
     echo "  -D, --distclean             Clean up all files that are not in repo."
+    echo "  --secure-boot               Add MSFT secure boot keys. Default: ${SECUREBOOT}"
+    echo "  --enable-secure-boot        Enable secure boot by default. Default: ${ENABLESECUREBOOT}"
     echo "  -h, --help                  Show this help."
     echo
     exit "${1}"
@@ -140,14 +142,18 @@ function _pack_image() {
 
     echo " => Building 8MB NOR FLASH IMAGE"
     cp ${WORKSPACE}/Build/${PLATFORM_NAME}/${RELEASE_TYPE}_${TOOLCHAIN}/FV/NOR_FLASH_IMAGE.fd ${WORKSPACE}/RK3588_NOR_FLASH.img
+    dd if=/dev/zero of=${WORKSPACE}/RK3588_RAWEDK2.img bs=1K count=8192 conv=notrunc
 
     # GPT at 0x0, size:0x4400
     dd if=${ROOTDIR}/misc/rk3588_spi_nor_gpt.img of=${WORKSPACE}/RK3588_NOR_FLASH.img
     # idblock at 0x8000
     dd if=${WORKSPACE}/idblock.bin of=${WORKSPACE}/RK3588_NOR_FLASH.img bs=1K seek=32
+    dd if=${WORKSPACE}/idblock.bin of=${WORKSPACE}/RK3588_RAWEDK2.img bs=1K seek=0 conv=notrunc
     # FIT Image at 0x100000
     dd if=${WORKSPACE}/${DEVICE}_EFI.itb of=${WORKSPACE}/RK3588_NOR_FLASH.img bs=1K seek=1024
-    cp ${WORKSPACE}/RK3588_NOR_FLASH.img ${ROOTDIR}/
+    dd if=${WORKSPACE}/${DEVICE}_EFI.itb of=${WORKSPACE}/RK3588_RAWEDK2.img bs=1K seek=992 conv=notrunc
+    cp ${WORKSPACE}/RK3588_NOR_FLASH.img ${ROOTDIR}/${DEVICE}_NOR_FLASH.img
+    cp ${WORKSPACE}/RK3588_RAWEDK2.img ${ROOTDIR}/${DEVICE}_RAWEDK2.img
 }
 
 function _build(){
@@ -209,6 +215,53 @@ function _build(){
     make -C "${ROOTDIR}/edk2/BaseTools"
     source "${ROOTDIR}/edk2/edksetup.sh"
 
+    if "${SECUREBOOT}"; then
+        if ! [ -d "${ROOTDIR}/keys" ]; then
+            mkdir -p "${ROOTDIR}/keys"
+        fi
+        # Download keys if not present
+        if ! [ -f "${ROOTDIR}/keys/pk.cer" ]; then
+            openssl req -new -x509 -newkey rsa:2048 -subj "/CN=Rockchip Platform Key/" -keyout /dev/null -outform DER -out keys/pk.cer -days 7300 -nodes -sha256
+        fi
+        if ! [ -f "${ROOTDIR}/keys/ms_kek1.cer" ]; then
+            curl -L https://go.microsoft.com/fwlink/?LinkId=321185 -o keys/ms_kek1.cer
+        fi
+        if ! [ -f "${ROOTDIR}/keys/ms_kek2.cer" ]; then
+            curl -L https://go.microsoft.com/fwlink/?linkid=2239775 -o keys/ms_kek2.cer
+        fi
+        if ! [ -f "${ROOTDIR}/keys/ms_db1.cer" ]; then
+            curl -L https://go.microsoft.com/fwlink/?LinkId=321192 -o keys/ms_db1.cer
+        fi
+        if ! [ -f "${ROOTDIR}/keys/ms_db2.cer" ]; then
+            curl -L https://go.microsoft.com/fwlink/?LinkId=321194 -o keys/ms_db2.cer
+        fi
+        if ! [ -f "${ROOTDIR}/keys/ms_db3.cer" ]; then
+            curl -L https://go.microsoft.com/fwlink/?linkid=2239776 -o keys/ms_db3.cer
+        fi
+        if ! [ -f "${ROOTDIR}/keys/ms_db4.cer" ]; then
+            curl -L https://go.microsoft.com/fwlink/?linkid=2239872 -o keys/ms_db4.cer
+        fi
+        if ! [ -f "${ROOTDIR}/keys/arm64_dbx.bin" ]; then
+            curl -L https://uefi.org/sites/default/files/resources/dbxupdate_arm64.bin -o keys/arm64_dbx.bin
+        fi
+        EDK2_FLAGS="${EDK2_FLAGS} \
+              -D SECURE_BOOT_ENABLE=TRUE \
+              -D DEFAULT_KEYS=TRUE \
+              -D PK_DEFAULT_FILE=keys/pk.cer \
+              -D KEK_DEFAULT_FILE1=keys/ms_kek1.cer \
+              -D KEK_DEFAULT_FILE2=keys/ms_kek2.cer \
+              -D DB_DEFAULT_FILE1=keys/ms_db1.cer \
+              -D DB_DEFAULT_FILE2=keys/ms_db2.cer \
+              -D DB_DEFAULT_FILE3=keys/ms_db3.cer \
+              -D DB_DEFAULT_FILE4=keys/ms_db4.cer \
+              -D DBX_DEFAULT_FILE1=keys/arm64_dbx.bin"
+
+        if "${ENABLESECUREBOOT}"; then
+            EDK2_FLAGS="${EDK2_FLAGS} \
+              -D RK3588_SECURE_BOOT_DEFAULT_ENABLE=TRUE"
+        fi
+    fi
+
     build \
         -s \
         -n 0 \
@@ -249,11 +302,13 @@ SKIP_PATCHSETS=false
 CLEAN=false
 DISTCLEAN=false
 OUTDIR="${PWD}"
+SECUREBOOT=false
+ENABLESECUREBOOT=false
 
 #
 # Get options
 #
-OPTS=$(getopt -o "d:r:t:CDh" -l "device:,release:,toolchain:,open-tfa:,tfa-flags:,edk2-flags:,skip-patchsets,clean,distclean,help" -n build.sh -- "${@}") || _help $?
+OPTS=$(getopt -o "d:r:t:CDh" -l "device:,release:,toolchain:,open-tfa:,tfa-flags:,edk2-flags:,skip-patchsets,clean,distclean,secure-boot,enable-secure-boot,help" -n build.sh -- "${@}") || _help $?
 eval set -- "${OPTS}"
 while true; do
     case "${1}" in
@@ -266,6 +321,8 @@ while true; do
         --skip-patchsets) SKIP_PATCHSETS=true; shift ;;
         -C|--clean) CLEAN=true; shift ;;
         -D|--distclean) DISTCLEAN=true; shift ;;
+        --secure-boot) SECUREBOOT=true; shift ;;
+        --enable-secure-boot) ENABLESECUREBOOT=true; shift ;;
         -h|--help) _help 0; shift ;;
         --) shift; break ;;
         *) break ;;
@@ -299,6 +356,11 @@ if [ ${MACHINE_TYPE} != 'aarch64' ]; then
 fi
 
 GIT_COMMIT="$(git describe --tags --always)" || GIT_COMMIT="unknown"
+
+# Were we an untagged commit? If so, use date to generate version (we are dirty)
+if [ "$GIT_COMMIT" == "$(git rev-parse --short HEAD)" ]; then
+    GIT_COMMIT="edk2-rk3588-$(date +%Y%m%d)-${GIT_COMMIT}"
+fi
 
 export WORKSPACE="${OUTDIR}/workspace"
 [ -d "${WORKSPACE}" ] || mkdir "${WORKSPACE}"

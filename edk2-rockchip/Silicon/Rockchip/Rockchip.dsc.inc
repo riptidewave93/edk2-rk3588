@@ -140,12 +140,16 @@
   #
   # Secure Boot dependencies
   #
-!if $(SECURE_BOOT_ENABLE) == TRUE
-  TpmMeasurementLib|SecurityPkg/Library/DxeTpmMeasurementLib/DxeTpmMeasurementLib.inf
-  AuthVariableLib|SecurityPkg/Library/AuthVariableLib/AuthVariableLib.inf
+  # Note: SecureBootVariableLib and SecureBootVariableProvisionLib are always
+  # included (even when SECURE_BOOT_ENABLE is FALSE) because PlatformBootManagerLib
+  # uses them for auto-enrollment functionality.
   SecureBootVariableLib|SecurityPkg/Library/SecureBootVariableLib/SecureBootVariableLib.inf
   SecureBootVariableProvisionLib|SecurityPkg/Library/SecureBootVariableProvisionLib/SecureBootVariableProvisionLib.inf
   PlatformPKProtectionLib|SecurityPkg/Library/PlatformPKProtectionLibVarPolicy/PlatformPKProtectionLibVarPolicy.inf
+
+!if $(SECURE_BOOT_ENABLE) == TRUE
+  TpmMeasurementLib|SecurityPkg/Library/DxeTpmMeasurementLib/DxeTpmMeasurementLib.inf
+  AuthVariableLib|SecurityPkg/Library/AuthVariableLib/AuthVariableLib.inf
 
   # re-use the UserPhysicalPresent() dummy implementation from the ovmf tree
   PlatformSecureLib|OvmfPkg/Library/PlatformSecureLib/PlatformSecureLib.inf
@@ -361,6 +365,10 @@ FspiLib|Silicon/Rockchip/Library/FspiLib/FspiLib.inf
 
   # Compile with symbols to support overlays.
   *_*_*_DTC_FLAGS = -@
+
+!if $(RK3588_SECURE_BOOT_DEFAULT_ENABLE) == TRUE
+  GCC:*_*_*_CC_FLAGS = -DRK3588_SECURE_BOOT_DEFAULT_ENABLE
+!endif
 
 [BuildOptions.common.EDKII.DXE_RUNTIME_DRIVER]
   GCC:*_*_ARM_DLINK_FLAGS = -z common-page-size=0x1000
