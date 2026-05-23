@@ -30,12 +30,18 @@
 #include <Protocol/PciIo.h>
 #include <Protocol/PciRootBridgeIo.h>
 #include <Protocol/PlatformBootManager.h>
+#include <Guid/AuthenticatedVariableFormat.h>
 #include <Guid/BootDiscoveryPolicy.h>
 #include <Guid/EventGroup.h>
+#include <Guid/GlobalVariable.h>
+#include <Guid/ImageAuthentication.h>
 #include <Guid/NonDiscoverableDevice.h>
 #include <Guid/TtyTerm.h>
 #include <Guid/SerialPortLibVendor.h>
 #include <Protocol/FirmwareVolume2.h>
+#include <UefiSecureBoot.h>
+#include <Library/SecureBootVariableLib.h>
+#include <Library/SecureBootVariableProvisionLib.h>
 
 #include "PlatformBm.h"
 
@@ -802,6 +808,129 @@ PlatformRegisterOptionsAndKeys (
   PlatformRegisterFvBootOption (&gRockchipMaskromResetFileGuid, L"Reset to MaskROM", 0, &F4);
 }
 
+/**
+  Automatically enroll default Secure Boot keys on first boot.
+
+  This function checks if the system is in Setup Mode (no keys enrolled),
+  and if so, automatically enrolls the default PK, KEK, db, dbx keys that
+  were embedded at build time.
+
+  @retval EFI_SUCCESS     Keys were enrolled successfully or already enrolled.
+  @retval Others          Failed to enroll keys.
+**/
+STATIC
+EFI_STATUS
+AutoEnrollSecureBootKeys (
+  VOID
+  )
+{
+  EFI_STATUS  Status;
+  UINT8       SetupMode;
+
+  Status = GetSetupMode (&SetupMode);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "%a: Cannot get SetupMode variable: %r\n", __func__, Status));
+    return Status;
+  }
+
+  //
+  // If we're not in Setup Mode, keys are already enrolled
+  //
+  if (SetupMode == USER_MODE) {
+    DEBUG ((DEBUG_INFO, "%a: Already in USER_MODE, keys already enrolled\n", __func__));
+    return EFI_SUCCESS;
+  }
+
+  DEBUG ((DEBUG_INFO, "%a: System in SETUP_MODE, auto-enrolling default Secure Boot keys\n", __func__));
+
+  //
+  // Set to Custom Mode to allow enrollment
+  //
+  Status = SetSecureBootMode (CUSTOM_SECURE_BOOT_MODE);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "%a: Cannot set CUSTOM_SECURE_BOOT_MODE: %r\n", __func__, Status));
+    return Status;
+  }
+
+  //
+  // Enroll db (authorized database)
+  //
+  Status = EnrollDbFromDefault ();
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "%a: Cannot enroll db: %r\n", __func__, Status));
+    goto error;
+  }
+
+  //
+  // Enroll dbx (forbidden database)
+  //
+  Status = EnrollDbxFromDefault ();
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "%a: Cannot enroll dbx: %r\n", __func__, Status));
+    // Non-fatal, continue
+  }
+
+  //
+  // Enroll dbt (timestamp database)
+  //
+  Status = EnrollDbtFromDefault ();
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "%a: Cannot enroll dbt: %r\n", __func__, Status));
+    // Non-fatal, continue
+  }
+
+  //
+  // Enroll KEK (Key Exchange Keys)
+  //
+  Status = EnrollKEKFromDefault ();
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "%a: Cannot enroll KEK: %r\n", __func__, Status));
+    goto cleardbs;
+  }
+
+  //
+  // Enroll PK (Platform Key) - this will transition to User Mode
+  //
+  Status = EnrollPKFromDefault ();
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "%a: Cannot enroll PK: %r\n", __func__, Status));
+    goto clearKEK;
+  }
+
+  //
+  // Set to Standard Secure Boot Mode
+  //
+  Status = SetSecureBootMode (STANDARD_SECURE_BOOT_MODE);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((
+      DEBUG_ERROR,
+      "%a: Cannot set STANDARD_SECURE_BOOT_MODE: %r\n"
+      "System is in USER_MODE but CustomMode is still enabled\n",
+      __func__,
+      Status
+      ));
+    // Non-fatal, secure boot is still active
+  }
+
+  DEBUG ((DEBUG_INFO, "%a: Successfully enrolled default Secure Boot keys\n", __func__));
+  return EFI_SUCCESS;
+
+clearKEK:
+  DeleteKEK ();
+
+cleardbs:
+  DeleteDb ();
+  DeleteDbx ();
+  DeleteDbt ();
+
+error:
+  //
+  // Try to return to Standard mode on error
+  //
+  SetSecureBootMode (STANDARD_SECURE_BOOT_MODE);
+  return Status;
+}
+
 //
 // BDS Platform Functions
 //
@@ -827,6 +956,13 @@ PlatformBootManagerBeforeConsole (
   // Signal EndOfDxe PI Event
   //
   EfiEventGroupSignal (&gEfiEndOfDxeEventGroupGuid);
+
+#ifdef RK3588_SECURE_BOOT_DEFAULT_ENABLE
+  //
+  // Auto-enroll Secure Boot keys on first boot if enabled at build time
+  //
+  AutoEnrollSecureBootKeys ();
+#endif
 
   //
   // Dispatch deferred images after EndOfDxe event.

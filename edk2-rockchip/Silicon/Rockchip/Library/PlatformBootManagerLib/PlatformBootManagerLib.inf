@@ -33,6 +33,7 @@
   EmbeddedPkg/EmbeddedPkg.dec
   MdeModulePkg/MdeModulePkg.dec
   MdePkg/MdePkg.dec
+  SecurityPkg/SecurityPkg.dec
   ShellPkg/ShellPkg.dec
   Silicon/Rockchip/RockchipPkg.dec
 
@@ -48,6 +49,8 @@
   MemoryAllocationLib
   PcdLib
   PrintLib
+  SecureBootVariableLib
+  SecureBootVariableProvisionLib
   UefiBootManagerLib
   UefiBootServicesTableLib
   UefiLib
@@ -73,10 +76,14 @@
   gEdkiiNonDiscoverableXhciDeviceGuid
   gEfiBootManagerPolicyNetworkGuid
   gEfiBootManagerPolicyConnectAllGuid
+  gEfiCustomModeEnableGuid
   gEfiFileInfoGuid
   gEfiFileSystemInfoGuid
   gEfiFileSystemVolumeLabelInfoIdGuid
   gEfiEndOfDxeEventGroupGuid
+  gEfiGlobalVariableGuid
+  gEfiImageSecurityDatabaseGuid
+  gEfiSecureBootEnableDisableGuid
   gEfiTtyTermGuid
   gUefiShellFileGuid
   gRockchipEventPlatformBmAfterConsoleGuid

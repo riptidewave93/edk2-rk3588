@@ -61,7 +61,10 @@ SetupCoolingFanVariables (
                   &Var32
                   );
   if (EFI_ERROR (Status)) {
-    Status = PcdSet32S (PcdCoolingFanSpeed, FAN_PERCENTAGE_DEFAULT);
+    // Use the PCD's configured default from the DSC file
+    // instead of hardcoding FAN_PERCENTAGE_DEFAULT
+    Var32 = PcdGet32 (PcdCoolingFanSpeed);
+    Status = PcdSet32S (PcdCoolingFanSpeed, Var32);
     ASSERT_EFI_ERROR (Status);
   }
 }

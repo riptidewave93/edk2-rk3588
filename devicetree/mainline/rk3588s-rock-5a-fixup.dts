@@ -9,3 +9,34 @@
 &i2s5_8ch {
  	status = "okay";
 };
+
+&{/leds} {
+	compatible = "gpio-leds";
+	pinctrl-names = "default";
+	pinctrl-0 = <&io_led>;
+
+	io-led {
+		color = <LED_COLOR_ID_BLUE>;
+		function = LED_FUNCTION_SD;
+		gpios = <&gpio3 RK_PD5 GPIO_ACTIVE_HIGH>;
+		linux,default-trigger = "mmc0";
+	};
+};
+
+&i2c8 {
+	status = "okay";
+	pinctrl-0 = <&i2c8m2_xfer>;
+
+	rtc@68 {
+		compatible = "maxim,ds3231";
+		reg = <0x68>;
+	};
+};
+
+// Some eMMCs aren't stable at HS400; force HS200 @ 150MHz.
+&sdhci {
+	/delete-property/ mmc-hs400-1_8v;
+	/delete-property/ mmc-hs400-enhanced-strobe;
+	mmc-hs200-1_8v;
+	max-frequency = <150000000>;
+};

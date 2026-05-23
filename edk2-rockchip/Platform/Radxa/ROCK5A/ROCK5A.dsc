@@ -96,6 +96,23 @@
   gRK3588TokenSpaceGuid.PcdHasOnBoardFanOutput|TRUE
 
   #
+  # Default to DTB Only with patch support
+  #
+  gRK3588TokenSpaceGuid.PcdConfigTableModeDefault|0x00000002
+  gRK3588TokenSpaceGuid.PcdFdtSupportOverridesDefault|TRUE
+  
+  #
+  # Default to HTTP boot only, no IPv6
+  #
+  gRockchipTokenSpaceGuid.PcdNetworkStackIpv6EnabledDefault|FALSE
+  gRockchipTokenSpaceGuid.PcdNetworkStackPxeBootEnabledDefault|FALSE
+
+  #
+  # Default to force display disabled
+  #
+  gRK3588TokenSpaceGuid.PcdDisplayForceOutputDefault|FALSE
+
+  #
   # Display support flags and default values
   #
   gRK3588TokenSpaceGuid.PcdDisplayConnectors|{CODE({

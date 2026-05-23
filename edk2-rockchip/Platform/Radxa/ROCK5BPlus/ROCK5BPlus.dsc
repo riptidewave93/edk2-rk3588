@@ -64,7 +64,7 @@
   gRockchipTokenSpaceGuid.PcdPlatformVendorName|"Radxa"
   gRockchipTokenSpaceGuid.PcdFamilyName|"ROCK 5"
   gRockchipTokenSpaceGuid.PcdProductUrl|"https://docs.radxa.com/en/rock5/rock5b"
-  gRockchipTokenSpaceGuid.PcdDeviceTreeName|"rk3588-rock-5bp"
+  gRockchipTokenSpaceGuid.PcdDeviceTreeName|"rk3588-rock-5b-plus"
 
   # I2C
   gRockchipTokenSpaceGuid.PcdI2cSlaveAddresses|{ 0x42, 0x43, 0x51, 0x11 }
@@ -108,6 +108,23 @@
   gRK3588TokenSpaceGuid.PcdHasOnBoardFanOutput|TRUE
 
   #
+  # Default to DTB Only with patch support
+  #
+  gRK3588TokenSpaceGuid.PcdConfigTableModeDefault|0x00000002
+  gRK3588TokenSpaceGuid.PcdFdtSupportOverridesDefault|TRUE
+
+  #
+  # Default to HTTP boot only, no IPv6
+  #
+  gRockchipTokenSpaceGuid.PcdNetworkStackIpv6EnabledDefault|FALSE
+  gRockchipTokenSpaceGuid.PcdNetworkStackPxeBootEnabledDefault|FALSE
+
+  #
+  # Default to force display disabled
+  #
+  gRK3588TokenSpaceGuid.PcdDisplayForceOutputDefault|FALSE
+
+  #
   # Display support flags and default values
   #
   gRK3588TokenSpaceGuid.PcdDisplayConnectors|{CODE({
@@ -115,6 +132,12 @@
     VOP_OUTPUT_IF_HDMI1,
     VOP_OUTPUT_IF_DP0
   })}
+
+[PcdsDynamicHii.common.DEFAULT]
+  #
+  # Set onboard cooling fan to 100%
+  #
+  gRK3588TokenSpaceGuid.PcdCoolingFanSpeed|L"CoolingFanSpeed"|gRK3588DxeFormSetGuid|0x0|100
 
 ################################################################################
 #
@@ -127,6 +150,7 @@
 
   # Device Tree Support
   $(PLATFORM_DIRECTORY)/DeviceTree/Vendor.inf
+  $(PLATFORM_DIRECTORY)/DeviceTree/Mainline.inf
 
   # Splash screen logo
   $(VENDOR_DIRECTORY)/Drivers/LogoDxe/LogoDxe.inf

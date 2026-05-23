@@ -10,3 +10,5 @@ ramdisk
 *.rej
 *.orig
 *_FLASH.img
+*_RAWEDK2.img
+keys
