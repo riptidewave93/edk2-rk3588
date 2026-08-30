@@ -1,0 +1,19 @@
+#/** @file
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+#**/
+
+[Defines]
+  INF_VERSION                    = 0x0001001A
+  BASE_NAME                      = DeviceTree-Mainline
+  FILE_GUID                      = 5b66776e-52e2-4f23-8e85-327fa46fc9a8
+  MODULE_TYPE                    = USER_DEFINED
+  VERSION_STRING                 = 1.0
+
+[Sources]
+  devicetree/mainline/rk3588-quartzpro64-fixup.dts
+
+[Packages]
+  MdePkg/MdePkg.dec
+  Silicon/Rockchip/RockchipPkg.dec
