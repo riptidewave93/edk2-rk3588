@@ -6,6 +6,7 @@
 #include <Library/PcdLib.h>
 #include <Library/SpiLib.h>
 #include <Library/RK806.h>
+#include <Library/TimerLib.h>
 #if 0
 /* Not used or exisit register and configure */
 #define NA  -1
@@ -646,6 +647,10 @@ nldo_set_enable (
     ret = pmic_reg_write (cs_id, en_reg, &value, 1);
   }
 
+  if (enable) {
+    MicroSecondDelay (500); // matches Linux/U-Boot LDO enable_time
+  }
+
   return ret;
 }
 
@@ -696,6 +701,10 @@ pldo_set_enable (
     }
 
     ret =  pmic_reg_write (cs_id, en_reg, &value, 1);
+  }
+
+  if (enable) {
+    MicroSecondDelay (500); // matches Linux/U-Boot LDO enable_time
   }
 
   return ret;

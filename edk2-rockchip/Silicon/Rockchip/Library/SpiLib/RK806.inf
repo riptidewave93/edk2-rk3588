@@ -32,6 +32,7 @@
   IoLib
   SpiLib
   RockchipPlatformLib
+  TimerLib
 
 [Packages]
   MdePkg/MdePkg.dec
