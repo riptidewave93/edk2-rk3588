@@ -16,16 +16,12 @@
 #include <Library/PcdLib.h>
 #include <Library/Rk3588Mem.h>
 #include <Library/RkAtagsLib.h>
-#include <Library/SdramLib.h>
 
-UINT64         mSystemMemoryBase = FixedPcdGet64 (PcdSystemMemoryBase);
-STATIC UINT64  mSystemMemorySize = FixedPcdGet64 (PcdSystemMemorySize);
-
-// Max number of System RAM regions above 4GB taken from the DDR_MEM ATAG.
-#define MAX_HIGH_MEMORY_BANKS  8
+// Max number of DRAM banks in the DDR_MEM ATAG.
+#define MAX_DRAM_BANKS  10
 
 // The total number of descriptors, including the final "end-of-table" descriptor.
-#define MAX_VIRTUAL_MEMORY_MAP_DESCRIPTORS  (12 + MAX_HIGH_MEMORY_BANKS - 1)
+#define MAX_VIRTUAL_MEMORY_MAP_DESCRIPTORS  (8 + MAX_DRAM_BANKS)
 
 STATIC BOOLEAN                    VirtualMemoryInfoInitialized = FALSE;
 STATIC RK3588_MEMORY_REGION_INFO  VirtualMemoryInfo[MAX_VIRTUAL_MEMORY_MAP_DESCRIPTORS];
@@ -36,79 +32,76 @@ STATIC RK3588_MEMORY_REGION_INFO  VirtualMemoryInfo[MAX_VIRTUAL_MEMORY_MAP_DESCR
                        FixedPcdGet32(PcdFlashNvStorageFtwWorkingSize) + \
                        FixedPcdGet32(PcdFlashNvStorageFtwSpareSize))
 
-/**
-  Add the System RAM above 4GB as reported by the DDR_MEM ATAG.
+#define OpteeBase  0x08400000
+#define OpteeSize  0x1000000
 
-  Some DDR configurations (e.g. 12GB made of 4 x 3GB channels) leave holes
-  above 4GB, so that RAM cannot be assumed to be contiguous.
+/**
+  Add the System RAM reported by the DDR init blob in the DDR_MEM ATAG.
+
+  The DRAM banks can have holes, e.g. at 0x180000000 on 12GB (4 x 3GB
+  channels), or at 0x3FC000000 and 0x3FFF00000 on 16GB.
 
   @param[in,out] VirtualMemoryTable  The table to append the regions to.
   @param[in,out] Index               Next free entry in the table.
 
   @retval TRUE   The regions were added.
-  @retval FALSE  No usable ATAG was found and nothing was added.
+  @retval FALSE  The ATAG is missing or invalid and nothing was added.
 **/
 STATIC
 BOOLEAN
-AddHighMemoryFromAtags (
+AddSystemRamFromAtags (
   IN OUT ARM_MEMORY_REGION_DESCRIPTOR  *VirtualMemoryTable,
   IN OUT UINTN                         *Index
   )
 {
   RKATAG_DDR_MEM  *DdrMem;
   UINT32          Bank;
-  UINT32          HighBanks;
   UINT64          Start;
   UINT64          End;
-  UINT64          HighSize;
+  UINT64          PrevEnd;
 
   DdrMem = RkAtagsGetDdrMem ();
-  if ((DdrMem == NULL) || (DdrMem->Count == 0) || (DdrMem->Count > ARRAY_SIZE (DdrMem->Bank) / 2)) {
+  if ((DdrMem == NULL) || (DdrMem->Count == 0) || (DdrMem->Count > MAX_DRAM_BANKS)) {
     return FALSE;
   }
 
   //
   // Bank[] holds all the base addresses first, followed by all the sizes.
+  // The banks must be in order and stay clear of the MMIO windows.
   //
-  HighBanks = 0;
-  HighSize  = 0;
+  PrevEnd = 0;
   for (Bank = 0; Bank < DdrMem->Count; Bank++) {
     Start = DdrMem->Bank[Bank];
     End   = Start + DdrMem->Bank[Bank + DdrMem->Count];
     DEBUG ((DEBUG_INFO, "DDR bank %u: 0x%lx - 0x%lx\n", Bank, Start, End));
 
-    if (End == Start) {
-      continue;
-    }
-
-    if ((End < Start) || (((Start | End) & EFI_PAGE_MASK) != 0) || (End > 0x0000000900000000UL)) {
-      DEBUG ((DEBUG_WARN, "DDR_MEM ATAG looks invalid, ignoring it.\n"));
+    if ((End <= Start) || (Start < PrevEnd) || (((Start | End) & EFI_PAGE_MASK) != 0) ||
+        ((Start < 0x100000000UL) && (End > 0xF0000000)) || (End > 0x0000000900000000UL))
+    {
       return FALSE;
     }
 
-    if (End > 0x100000000UL) {
-      HighBanks++;
-      HighSize += End - MAX (Start, 0x100000000UL);
-    }
+    PrevEnd = End;
   }
 
-  if ((HighBanks == 0) || (HighBanks > MAX_HIGH_MEMORY_BANKS) || (HighSize > mSystemMemorySize)) {
+  //
+  // The first bank must also hold the firmware regions below OP-TEE's end,
+  // which are mapped separately.
+  //
+  if ((DdrMem->Bank[0] != 0) || (DdrMem->Bank[DdrMem->Count] <= OpteeBase + OpteeSize)) {
     return FALSE;
   }
 
   for (Bank = 0; Bank < DdrMem->Count; Bank++) {
-    Start = MAX (DdrMem->Bank[Bank], 0x100000000UL);
+    Start = MAX (DdrMem->Bank[Bank], OpteeBase + OpteeSize);
     End   = DdrMem->Bank[Bank] + DdrMem->Bank[Bank + DdrMem->Count];
-    if (End <= Start) {
-      continue;
-    }
 
     VirtualMemoryTable[*Index].PhysicalBase = Start;
     VirtualMemoryTable[*Index].VirtualBase  = Start;
     VirtualMemoryTable[*Index].Length       = End - Start;
     VirtualMemoryTable[*Index].Attributes   = ARM_MEMORY_REGION_ATTRIBUTE_WRITE_BACK;
     VirtualMemoryInfo[*Index].Type          = RK3588_MEM_BASIC_REGION;
-    VirtualMemoryInfo[(*Index)++].Name      = L"System RAM >= 4GB";
+    VirtualMemoryInfo[(*Index)++].Name      = (Start < 0x100000000UL) ? L"System RAM (< 4GB)" : L"System RAM >= 4GB";
   }
 
   return TRUE;
@@ -133,9 +126,6 @@ ArmPlatformGetVirtualMemoryMap (
 {
   UINTN                         Index = 0;
   ARM_MEMORY_REGION_DESCRIPTOR  *VirtualMemoryTable;
-
-  mSystemMemorySize = SdramGetMemorySize ();
-  DEBUG ((DEBUG_INFO, "RAM: 0x%ll08X (Size 0x%ll08X)\n", mSystemMemoryBase, mSystemMemorySize));
 
   VirtualMemoryTable = (ARM_MEMORY_REGION_DESCRIPTOR *)AllocatePages (
                                                          EFI_SIZE_TO_PAGES (
@@ -177,26 +167,34 @@ ArmPlatformGetVirtualMemoryMap (
   // Base System RAM (< OP-TEE)
   VirtualMemoryTable[Index].PhysicalBase = VariablesBase + VariablesSize;
   VirtualMemoryTable[Index].VirtualBase  = VirtualMemoryTable[Index].PhysicalBase;
-  VirtualMemoryTable[Index].Length       = MIN (mSystemMemorySize, 0x08400000 - VirtualMemoryTable[Index].PhysicalBase);
+  VirtualMemoryTable[Index].Length       = OpteeBase - VirtualMemoryTable[Index].PhysicalBase;
   VirtualMemoryTable[Index].Attributes   = ARM_MEMORY_REGION_ATTRIBUTE_WRITE_BACK;
   VirtualMemoryInfo[Index].Type          = RK3588_MEM_BASIC_REGION;
   VirtualMemoryInfo[Index++].Name        = L"System RAM (< OP-TEE)";
 
   // OP-TEE Region
-  VirtualMemoryTable[Index].PhysicalBase = 0x08400000;
+  VirtualMemoryTable[Index].PhysicalBase = OpteeBase;
   VirtualMemoryTable[Index].VirtualBase  = VirtualMemoryTable[Index].PhysicalBase;
-  VirtualMemoryTable[Index].Length       = 0x1000000;
+  VirtualMemoryTable[Index].Length       = OpteeSize;
   VirtualMemoryTable[Index].Attributes   = ARM_MEMORY_REGION_ATTRIBUTE_WRITE_BACK;
   VirtualMemoryInfo[Index].Type          = RK3588_MEM_RESERVED_REGION;
   VirtualMemoryInfo[Index++].Name        = L"OP-TEE";
 
-  // Base System RAM (< 4GB)
-  VirtualMemoryTable[Index].PhysicalBase = 0x08400000 + 0x1000000;
-  VirtualMemoryTable[Index].VirtualBase  = VirtualMemoryTable[Index].PhysicalBase;
-  VirtualMemoryTable[Index].Length       = MIN (mSystemMemorySize, 0xF0000000 - VirtualMemoryTable[Index].PhysicalBase);
-  VirtualMemoryTable[Index].Attributes   = ARM_MEMORY_REGION_ATTRIBUTE_WRITE_BACK;
-  VirtualMemoryInfo[Index].Type          = RK3588_MEM_BASIC_REGION;
-  VirtualMemoryInfo[Index++].Name        = L"System RAM (< 4GB)";
+  if (!AddSystemRamFromAtags (VirtualMemoryTable, &Index)) {
+    DEBUG ((
+      DEBUG_ERROR,
+      "No valid DDR_MEM ATAG, mapping only the first 0x%lx bytes of RAM!\n",
+      FixedPcdGet64 (PcdSystemMemorySize)
+      ));
+
+    // Base System RAM (< PcdSystemMemorySize)
+    VirtualMemoryTable[Index].PhysicalBase = OpteeBase + OpteeSize;
+    VirtualMemoryTable[Index].VirtualBase  = VirtualMemoryTable[Index].PhysicalBase;
+    VirtualMemoryTable[Index].Length       = FixedPcdGet64 (PcdSystemMemorySize) - (OpteeBase + OpteeSize);
+    VirtualMemoryTable[Index].Attributes   = ARM_MEMORY_REGION_ATTRIBUTE_WRITE_BACK;
+    VirtualMemoryInfo[Index].Type          = RK3588_MEM_BASIC_REGION;
+    VirtualMemoryInfo[Index++].Name        = L"System RAM (< 4GB)";
+  }
 
   // MMIO
   VirtualMemoryTable[Index].PhysicalBase = 0xF0000000;
@@ -206,18 +204,6 @@ ArmPlatformGetVirtualMemoryMap (
   VirtualMemoryInfo[Index].Type          = RK3588_MEM_UNMAPPED_REGION;
   VirtualMemoryInfo[Index++].Name        = L"MMIO";
 
-  if (!AddHighMemoryFromAtags (VirtualMemoryTable, &Index) &&
-      (mSystemMemorySize > 0x100000000UL))
-  {
-    // Base System RAM >= 4GB
-    VirtualMemoryTable[Index].PhysicalBase = 0x100000000;
-    VirtualMemoryTable[Index].VirtualBase  = VirtualMemoryTable[Index].PhysicalBase;
-    VirtualMemoryTable[Index].Length       = mSystemMemorySize - 0x100000000;
-    VirtualMemoryTable[Index].Attributes   = ARM_MEMORY_REGION_ATTRIBUTE_WRITE_BACK;
-    VirtualMemoryInfo[Index].Type          = RK3588_MEM_BASIC_REGION;
-    VirtualMemoryInfo[Index++].Name        = L"System RAM >= 4GB";
-  }
-
   // MMIO > 32GB
   VirtualMemoryTable[Index].PhysicalBase = 0x0000000900000000UL;
   VirtualMemoryTable[Index].VirtualBase  = VirtualMemoryTable[Index].PhysicalBase;
@@ -225,24 +211,6 @@ ArmPlatformGetVirtualMemoryMap (
   VirtualMemoryTable[Index].Attributes   = ARM_MEMORY_REGION_ATTRIBUTE_DEVICE;
   VirtualMemoryInfo[Index].Type          = RK3588_MEM_UNMAPPED_REGION;
   VirtualMemoryInfo[Index++].Name        = L"MMIO > 32GB";
-
-  if (mSystemMemoryBase + mSystemMemorySize > 0x3fc000000UL) {
-    // Bad memory range 1
-    VirtualMemoryTable[Index].PhysicalBase = 0x3fc000000;
-    VirtualMemoryTable[Index].VirtualBase  = VirtualMemoryTable[Index].PhysicalBase;
-    VirtualMemoryTable[Index].Length       = 0x500000;
-    VirtualMemoryTable[Index].Attributes   = ARM_MEMORY_REGION_ATTRIBUTE_UNCACHED_UNBUFFERED;
-    VirtualMemoryInfo[Index].Type          = RK3588_MEM_RESERVED_REGION;
-    VirtualMemoryInfo[Index++].Name        = L"BAD1";
-
-    // Bad memory range 2
-    VirtualMemoryTable[Index].PhysicalBase = 0x3fff00000;
-    VirtualMemoryTable[Index].VirtualBase  = VirtualMemoryTable[Index].PhysicalBase;
-    VirtualMemoryTable[Index].Length       = 0x100000;
-    VirtualMemoryTable[Index].Attributes   = ARM_MEMORY_REGION_ATTRIBUTE_UNCACHED_UNBUFFERED;
-    VirtualMemoryInfo[Index].Type          = RK3588_MEM_RESERVED_REGION;
-    VirtualMemoryInfo[Index++].Name        = L"BAD2";
-  }
 
   // End of Table
   VirtualMemoryTable[Index].PhysicalBase = 0;

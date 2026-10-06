@@ -38,7 +38,6 @@
   ResetUtilityLib
   RkAtagsLib
   SaradcLib
-  SdramLib
   SerialPortLib
 
 [Sources.common]
@@ -64,7 +63,6 @@
 
 [Pcd]
   gEfiMdeModulePkgTokenSpaceGuid.PcdSerialClockRate
-  gArmTokenSpaceGuid.PcdSystemMemoryBase
   gArmTokenSpaceGuid.PcdSystemMemorySize
 
 [PatchPcd]
