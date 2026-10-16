@@ -1,0 +1,33 @@
+From f35245df20b6d7ee64f178c000ad019675114874 Mon Sep 17 00:00:00 2001
+From: Chris Blake <chrisrblake93@gmail.com>
+Date: Fri, 16 Oct 2026 12:36:24 -0500
+Subject: [PATCH 10/11] fix(bl31): handle a NULL BL32 entry in v1 params
+
+The deprecated v1 parameter structure has a pointer to the BL32 entry
+point info, and bootloaders that do not load a BL32 leave it NULL. Rockchip's
+SPL is one of them. bl31_params_parse_helper() copied through that pointer
+unconditionally, which reads whatever happens to be at address 0.
+
+Only copy it when the pointer is valid, so bl32_ep_info is left untouched.
+
+Signed-off-by: Chris Blake <chrisrblake93@gmail.com>
+---
+ common/desc_image_load.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/common/desc_image_load.c b/common/desc_image_load.c
+index 0626de9d0..d2167aab3 100644
+--- a/common/desc_image_load.c
++++ b/common/desc_image_load.c
+@@ -351,7 +351,7 @@ void bl31_params_parse_helper(u_register_t param,
+ 			image_info_t *bl33_image_info;
+ 		} *v1 = (void *)(uintptr_t)param;
+ 		assert(v1->h.type == PARAM_BL31);
+-		if (bl32_ep_info_out != NULL)
++		if (bl32_ep_info_out != NULL && v1->bl32_ep_info != NULL)
+ 			*bl32_ep_info_out = *v1->bl32_ep_info;
+ 		if (bl33_ep_info_out != NULL)
+ 			*bl33_ep_info_out = *v1->bl33_ep_info;
+-- 
+2.56.0
+

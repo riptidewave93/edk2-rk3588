@@ -1,0 +1,53 @@
+From 8d27aece3cd678689402afcce8ca9228b5043d18 Mon Sep 17 00:00:00 2001
+From: Chris Blake <chrisrblake93@gmail.com>
+Date: Fri, 16 Oct 2026 12:36:24 -0500
+Subject: [PATCH 11/11] feat(rk3588): allow providing the BL32 entry point at
+ build time
+
+Rockchip's SPL loads the OP-TEE image from the FIT but never passes a BL32
+entry point to BL31, so an SPD such as opteed has nothing to start.
+
+Add ROCKCHIP_BL32_BASE. When it is set and the bootloader did not provide
+a BL32, BL31 uses that address as the BL32 entry point with default
+AArch64 arguments.
+
+Signed-off-by: Chris Blake <chrisrblake93@gmail.com>
+---
+ plat/rockchip/common/bl31_plat_setup.c | 8 ++++++++
+ plat/rockchip/rk3588/platform.mk       | 4 ++++
+ 2 files changed, 12 insertions(+)
+
+diff --git a/plat/rockchip/common/bl31_plat_setup.c b/plat/rockchip/common/bl31_plat_setup.c
+index 5448e47ec..962cc883e 100644
+--- a/plat/rockchip/common/bl31_plat_setup.c
++++ b/plat/rockchip/common/bl31_plat_setup.c
+@@ -69,6 +69,14 @@ void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
+ 	VERBOSE("bl31_setup\n");
+ 
+ 	bl31_params_parse_helper(arg0, &bl32_ep_info, &bl33_ep_info);
++
++#ifdef ROCKCHIP_BL32_BASE
++	/* Rockchip's SPL loads BL32 but does not pass it on to BL31 */
++	if (bl32_ep_info.pc == 0U) {
++		SET_PARAM_HEAD(&bl32_ep_info, PARAM_EP, VERSION_1, SECURE);
++		bl32_ep_info.pc = ROCKCHIP_BL32_BASE;
++	}
++#endif
+ }
+ 
+ /*******************************************************************************
+diff --git a/plat/rockchip/rk3588/platform.mk b/plat/rockchip/rk3588/platform.mk
+index 55697a51d..ef4c6d44f 100644
+--- a/plat/rockchip/rk3588/platform.mk
++++ b/plat/rockchip/rk3588/platform.mk
+@@ -100,3 +100,7 @@ ENABLE_SPE_FOR_LOWER_ELS	:= 0
+ PLAT_EXTRA_LD_SCRIPT	:=	1
+ TRNG_SUPPORT		:=	1
+ $(eval $(call add_define,PLAT_RK_CPU_RESET_EARLY))
++
++ifdef ROCKCHIP_BL32_BASE
++$(eval $(call add_define,ROCKCHIP_BL32_BASE))
++endif
+-- 
+2.56.0
+
