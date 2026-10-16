@@ -1,0 +1,75 @@
+From 40ffbb9c782ff86e40bdf016de46d59aa0914d7e Mon Sep 17 00:00:00 2001
+From: Chris Blake <chrisrblake93@gmail.com>
+Date: Fri, 16 Oct 2026 16:28:23 -0500
+Subject: [PATCH 3/4] core: let the platform hide a TA
+
+Add a weak plat_ta_is_hidden() hook. A hidden TA cannot have a session
+opened to it and is left out of the device PTA's TEE bus enumeration.
+
+This lets a platform turn off an embedded TA, such as an fTPM, at
+runtime based on a firmware setting.
+---
+ core/include/kernel/tee_ta_manager.h |  3 +++
+ core/kernel/tee_ta_manager.c         | 10 ++++++++++
+ core/pta/device.c                    |  3 +++
+ 3 files changed, 16 insertions(+)
+
+diff --git a/core/include/kernel/tee_ta_manager.h b/core/include/kernel/tee_ta_manager.h
+index 16725f524..1e2b2af9f 100644
+--- a/core/include/kernel/tee_ta_manager.h
++++ b/core/include/kernel/tee_ta_manager.h
+@@ -101,6 +101,9 @@ extern struct tee_ta_ctx_head tee_ctxes;
+ extern struct mutex tee_ta_mutex;
+ extern struct condvar tee_ta_init_cv;
+ 
++/* A hidden TA cannot be opened and is left out of TEE bus enumeration */
++bool plat_ta_is_hidden(const TEE_UUID *uuid);
++
+ TEE_Result tee_ta_open_session(TEE_ErrorOrigin *err, uint32_t *sess_id,
+ 			       struct tee_ta_session_head *open_sessions,
+ 			       const TEE_UUID *uuid,
+diff --git a/core/kernel/tee_ta_manager.c b/core/kernel/tee_ta_manager.c
+index 11c19d893..6a0e8d79c 100644
+--- a/core/kernel/tee_ta_manager.c
++++ b/core/kernel/tee_ta_manager.c
+@@ -711,6 +711,11 @@ static void maybe_release_ta_ctx(struct tee_ta_ctx *ctx)
+ 	}
+ }
+ 
++__weak bool plat_ta_is_hidden(const TEE_UUID *uuid __unused)
++{
++	return false;
++}
++
+ TEE_Result tee_ta_open_session(TEE_ErrorOrigin *err, uint32_t *sess_id,
+ 			       struct tee_ta_session_head *open_sessions,
+ 			       const TEE_UUID *uuid,
+@@ -725,6 +730,11 @@ TEE_Result tee_ta_open_session(TEE_ErrorOrigin *err, uint32_t *sess_id,
+ 	bool panicked = false;
+ 	bool was_busy = false;
+ 
++	if (plat_ta_is_hidden(uuid)) {
++		*err = TEE_ORIGIN_TEE;
++		return TEE_ERROR_ITEM_NOT_FOUND;
++	}
++
+ 	res = tee_ta_init_session(err, open_sessions, uuid, &s);
+ 	if (res != TEE_SUCCESS) {
+ 		DMSG("init session failed 0x%x", res);
+diff --git a/core/pta/device.c b/core/pta/device.c
+index 486bfd626..a33979155 100644
+--- a/core/pta/device.c
++++ b/core/pta/device.c
+@@ -33,6 +33,9 @@ static void add_ta(uint32_t flags, const TEE_UUID *uuid, uint8_t *buf,
+ 		return;
+ 	}
+ 
++	if (plat_ta_is_hidden(uuid))
++		return;
++
+ 	if (flags & rflags) {
+ 		if (*pos + sizeof(*uuid) <= blen)
+ 			tee_uuid_to_octets(buf + *pos, uuid);
+-- 
+2.56.0
+

@@ -1,0 +1,38 @@
+/** @file
+
+  SPDX-License-Identifier: BSD-2-Clause-Patent
+
+**/
+
+#langdef en-US  "English"
+
+#string STR_NULL                        #language en-US ""
+
+#string STR_FORM_SET_TITLE              #language en-US "Firmware TPM Configuration"
+#string STR_FORM_SET_TITLE_HELP         #language en-US "Configure the OP-TEE firmware TPM (fTPM)."
+
+#string STR_STATUS_PROMPT               #language en-US "Status"
+#string STR_STATUS_VALUE                #language en-US ""
+#string STR_STORAGE_PROMPT              #language en-US "Storage"
+#string STR_STORAGE_VALUE               #language en-US ""
+#string STR_MANUFACTURER_PROMPT         #language en-US "Manufacturer"
+#string STR_MANUFACTURER_VALUE          #language en-US ""
+#string STR_FIRMWARE_PROMPT             #language en-US "Firmware Version"
+#string STR_FIRMWARE_VALUE              #language en-US ""
+
+#string STR_ENABLED_PROMPT              #language en-US "Firmware TPM"
+#string STR_ENABLED_HELP                #language en-US "Enable or disable the fTPM. When disabled, the OS does not see a TPM."
+
+#string STR_OPERATION_PROMPT            #language en-US "Pending TPM Operation"
+#string STR_OPERATION_HELP              #language en-US "Runs once on the next boot. Clear erases all keys and data stored in the TPM. Change EPS gives the TPM a new endorsement key."
+#string STR_OPERATION_NONE              #language en-US "None"
+#string STR_OPERATION_CLEAR             #language en-US "Clear TPM"
+#string STR_OPERATION_CHANGE_EPS        #language en-US "Change EPS"
+
+#string STR_PCR_BANKS_SUBTITLE          #language en-US "Active PCR Banks"
+#string STR_PCR_BANKS_HELP              #language en-US "PCR banks the TPM uses. Changes apply on the next boot. At least one bank must stay selected."
+#string STR_PCR_BANK_SHA1_PROMPT        #language en-US " SHA1"
+#string STR_PCR_BANK_SHA256_PROMPT      #language en-US " SHA256"
+#string STR_PCR_BANK_SHA384_PROMPT      #language en-US " SHA384"
+
+#string STR_OS_ONLY_NOTE                #language en-US "TPM operations need RPMB storage."

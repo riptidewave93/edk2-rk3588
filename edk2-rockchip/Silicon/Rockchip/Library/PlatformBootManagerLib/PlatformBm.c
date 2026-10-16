@@ -16,6 +16,7 @@
 #include <Library/BootLogoLib.h>
 #include <Library/CapsuleLib.h>
 #include <Library/DevicePathLib.h>
+#include <Library/DxeServicesTableLib.h>
 #include <Library/HobLib.h>
 #include <Library/PcdLib.h>
 #include <Library/UefiBootManagerLib.h>
@@ -318,6 +319,32 @@ IsUsbHost (
 }
 
 /**
+  This FILTER_FUNCTION checks if a handle corresponds to a non-discoverable SDHCI controller.
+**/
+STATIC
+BOOLEAN
+EFIAPI
+IsSdhci (
+  IN EFI_HANDLE    Handle,
+  IN CONST CHAR16  *ReportText
+  )
+{
+  NON_DISCOVERABLE_DEVICE  *Device;
+  EFI_STATUS               Status;
+
+  Status = gBS->HandleProtocol (
+                  Handle,
+                  &gEdkiiNonDiscoverableDeviceProtocolGuid,
+                  (VOID **)&Device
+                  );
+  if (EFI_ERROR (Status)) {
+    return FALSE;
+  }
+
+  return CompareGuid (Device->Type, &gEdkiiNonDiscoverableSdhciDeviceGuid);
+}
+
+/**
   This CALLBACK_FUNCTION attempts to connect a handle non-recursively, asking
   the matching driver to produce all first-level child handles.
 **/
@@ -337,6 +364,29 @@ Connect (
                   NULL,   // RemainingDevicePath -- produce all children
                   FALSE   // Recursive
                   );
+  DEBUG ((
+    EFI_ERROR (Status) ? DEBUG_ERROR : DEBUG_VERBOSE,
+    "%a: %s: %r\n",
+    __FUNCTION__,
+    ReportText,
+    Status
+    ));
+}
+
+/**
+  This CALLBACK_FUNCTION attempts to connect a handle and all of its children.
+**/
+STATIC
+VOID
+EFIAPI
+ConnectRecursive (
+  IN EFI_HANDLE    Handle,
+  IN CONST CHAR16  *ReportText
+  )
+{
+  EFI_STATUS  Status;
+
+  Status = gBS->ConnectController (Handle, NULL, NULL, TRUE);
   DEBUG ((
     EFI_ERROR (Status) ? DEBUG_ERROR : DEBUG_VERBOSE,
     "%a: %s: %r\n",
@@ -931,6 +981,38 @@ error:
   return Status;
 }
 
+/**
+  fTPM keeps its state in eMMC RPMB, so bring up the eMMC before the TPM stack.
+**/
+STATIC
+VOID
+ConnectFtpmStorage (
+  VOID
+  )
+{
+  EFI_STATUS  Status;
+  VOID        *Interface;
+  EFI_HANDLE  Handle;
+
+  Status = gBS->LocateProtocol (&gRockchipFtpmStorageRequestProtocolGuid, NULL, &Interface);
+  if (EFI_ERROR (Status)) {
+    return;
+  }
+
+  FilterAndProcess (&gEdkiiNonDiscoverableDeviceProtocolGuid, IsSdhci, ConnectRecursive);
+
+  Handle = NULL;
+  Status = gBS->InstallMultipleProtocolInterfaces (
+                  &Handle,
+                  &gRockchipFtpmStorageReadyProtocolGuid,
+                  NULL,
+                  NULL
+                  );
+  ASSERT_EFI_ERROR (Status);
+
+  gDS->Dispatch ();
+}
+
 //
 // BDS Platform Functions
 //
@@ -952,6 +1034,8 @@ PlatformBootManagerBeforeConsole (
   VOID
   )
 {
+  ConnectFtpmStorage ();
+
   //
   // Signal EndOfDxe PI Event
   //

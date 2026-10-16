@@ -348,6 +348,11 @@ function _build(){
     make -C "${ROOTDIR}/edk2/BaseTools"
     source "${ROOTDIR}/edk2/edksetup.sh" --reconfig
 
+    # The EDK2 RPMB client cannot program the key, so provisioning goes through Linux
+    if ${FTPM} && ! ${RPMB_PROVISION}; then
+        EDK2_FLAGS="${EDK2_FLAGS} -D RK_FTPM_ENABLE=TRUE"
+    fi
+
     if "${SECUREBOOT}"; then
         if ! [ -d "${ROOTDIR}/keys" ]; then
             mkdir -p "${ROOTDIR}/keys"

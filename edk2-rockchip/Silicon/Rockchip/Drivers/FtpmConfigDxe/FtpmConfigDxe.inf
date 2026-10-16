@@ -1,0 +1,59 @@
+## @file
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = FtpmConfigDxe
+  FILE_GUID                      = a26b15bc-1e84-4ee6-9a91-1dba93adf0e1
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = FtpmConfigInitialize
+
+[Sources]
+  FtpmConfigDxe.c
+  FtpmConfigDxe.h
+  FtpmConfigDxeHii.uni
+  FtpmConfigDxeHii.vfr
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  SecurityPkg/SecurityPkg.dec
+  Silicon/Rockchip/RockchipPkg.dec
+
+[LibraryClasses]
+  BaseMemoryLib
+  DebugLib
+  DevicePathLib
+  HiiLib
+  MemoryAllocationLib
+  OpteeNvLib
+  PcdLib
+  PrintLib
+  Tpm2CommandLib
+  TpmPlatformHierarchyLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+  UefiRuntimeServicesTableLib
+
+[Guids]
+  gEfiEndOfDxeEventGroupGuid
+  gFtpmConfigFormSetGuid
+  gRockchipFtpmControlPtaGuid
+
+[Protocols]
+  gEfiDevicePathProtocolGuid
+  gEfiTcg2ProtocolGuid
+  gRockchipFtpmStorageRequestProtocolGuid
+
+[Pcd]
+  gEfiSecurityPkgTokenSpaceGuid.PcdTcg2HashAlgorithmBitmap
+  gEfiSecurityPkgTokenSpaceGuid.PcdTpm2HashMask
+
+[Depex]
+  gEfiVariableArchProtocolGuid        AND
+  gEfiVariableWriteArchProtocolGuid

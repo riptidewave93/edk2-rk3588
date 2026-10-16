@@ -45,6 +45,7 @@
   DebugLib
   DevicePathLib
   DxeServicesLib
+  DxeServicesTableLib
   HobLib
   MemoryAllocationLib
   PcdLib
@@ -72,6 +73,7 @@
 [Guids]
   gBootDiscoveryPolicyMgrFormsetGuid
   gEdkiiNonDiscoverableEhciDeviceGuid
+  gEdkiiNonDiscoverableSdhciDeviceGuid
   gEdkiiNonDiscoverableUhciDeviceGuid
   gEdkiiNonDiscoverableXhciDeviceGuid
   gEfiBootManagerPolicyNetworkGuid
@@ -100,3 +102,5 @@
   gEsrtManagementProtocolGuid
   gPlatformBootManagerProtocolGuid
   gOhciDeviceProtocolGuid
+  gRockchipFtpmStorageReadyProtocolGuid
+  gRockchipFtpmStorageRequestProtocolGuid

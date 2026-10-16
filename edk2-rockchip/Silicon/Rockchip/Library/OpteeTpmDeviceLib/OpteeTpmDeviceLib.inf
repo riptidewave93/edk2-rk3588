@@ -40,10 +40,11 @@
 
 [Protocols]
   gRockchipFtpmPresentProtocolGuid
+  gRockchipFtpmStorageReadyProtocolGuid
 
 [Guids]
   gRockchipFtpmTaGuid
 
 
 [Depex]
-  TRUE
+  gRockchipFtpmStorageReadyProtocolGuid
