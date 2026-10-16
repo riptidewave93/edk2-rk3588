@@ -145,6 +145,28 @@ GetEmmcDevice (
   return Status;
 }
 
+STATIC
+BOOLEAN
+IsEmmcHandle (
+  IN EFI_HANDLE  Handle
+  )
+{
+  EFI_DEVICE_PATH_PROTOCOL  *DevicePath;
+
+  for (DevicePath = DevicePathFromHandle (Handle);
+       (DevicePath != NULL) && !IsDevicePathEnd (DevicePath);
+       DevicePath = NextDevicePathNode (DevicePath))
+  {
+    if ((DevicePathType (DevicePath) == MESSAGING_DEVICE_PATH) &&
+        (DevicePathSubType (DevicePath) == MSG_EMMC_DP))
+    {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
 /**
   PrintCid
   Print the CID of the eMMC device.
@@ -375,6 +397,11 @@ GetEmmcCid (
       continue;
     }
 
+    // An SD card also reports SD_MMC, and its CID would derive the wrong RPMB key
+    if (!IsEmmcHandle (DiskInfoHandleBuffer[Index])) {
+      continue;
+    }
+
     InquiryDataSize = sizeof (EMMC_CID);
     Status          = DiskInfo->Inquiry (DiskInfo, (VOID *)Cid, &InquiryDataSize);
     if (EFI_ERROR (Status)) {
@@ -389,9 +416,11 @@ GetEmmcCid (
     FreePool (DiskInfoHandleBuffer);
   }
 
-  if (EmmcFound) {
-    PrintCid (Cid);
+  if (!EmmcFound) {
+    return EFI_NOT_FOUND;
   }
+
+  PrintCid (Cid);
 
   return EFI_SUCCESS;
 }
@@ -517,14 +546,18 @@ GetRpmbDevInfo (
 {
   EFI_STATUS  Status;
   EMMC_CID    Cid;
+  UINTN       Index;
 
+  // OP-TEE derives the RPMB key from the CID, so a missing CID must fail here
   Status = GetEmmcCid (&Cid);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "%a: Failed to get CID %r\n", __FUNCTION__, Status));
-    DEBUG ((DEBUG_ERROR, "Continue without this information\n"));
-  } else {
-    CopyMem (&DevInfo->Cid, &Cid, sizeof (EMMC_CID));
-    PrintCid (&Cid);
+    DevInfo->RetCode = RPMB_CMD_GET_DEV_INFO_RET_ERROR;
+    return Status;
+  }
+
+  for (Index = 0; Index < sizeof (EMMC_CID); Index++) {
+    DevInfo->Cid[Index] = ((UINT8 *)&Cid)[sizeof (EMMC_CID) - 1 - Index];
   }
 
   Status = RpmbEmmcGetExtCsd (PassThru, Slot, &ExtCsd);
@@ -807,12 +840,6 @@ HandleRpmbWrite (
     return Status;
   }
 
-  Status = RpmbEmmcClearPartition (PassThru, Slot);
-  if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: Failed to select RPMB Partition %r\n", __FUNCTION__, Status));
-    return Status;
-  }
-
   return Status;
 }
 
@@ -878,12 +905,6 @@ HandleRpmbRead (
     return Status;
   }
 
-  Status = RpmbEmmcClearPartition (PassThru, Slot);
-  if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: Failed to select RPMB Partition %r\n", __FUNCTION__, Status));
-    return Status;
-  }
-
   return Status;
 }
 
@@ -919,6 +940,7 @@ HandleRpmbDataReq (
   UINTN       NumReqFrames;
   UINTN       NumRespFrames;
   EFI_STATUS  Status;
+  EFI_STATUS  RestoreStatus;
 
   ReqFrame  = RpmbReq;
   RespFrame = RpmbResp;
@@ -932,6 +954,13 @@ HandleRpmbDataReq (
   NumReqFrames  = (ReqSize / RPMB_FRAME_SIZE);
   NumRespFrames = (RespSize / RPMB_FRAME_SIZE);
   BytesToUint16 (ReqFrame->Request, &Request);
+
+  // EmmcDxe caches the selected partition, so return to whatever the card has selected now
+  Status = RpmbEmmcGetExtCsd (PassThru, Slot, &ExtCsd);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "%a: Failed to get ExtCsd %r\n", __FUNCTION__, Status));
+    goto Error;
+  }
 
   switch (Request) {
     case RPMB_MSG_TYPE_REQ_WRITE_COUNTER_VAL_READ:
@@ -960,6 +989,14 @@ HandleRpmbDataReq (
       Status = EFI_INVALID_PARAMETER;
       goto Error;
       break;
+  }
+
+  RestoreStatus = RpmbEmmcClearPartition (PassThru, Slot);
+  if (EFI_ERROR (RestoreStatus)) {
+    DEBUG ((DEBUG_ERROR, "%a: Failed to restore the eMMC partition %r\n", __FUNCTION__, RestoreStatus));
+    if (!EFI_ERROR (Status)) {
+      Status = RestoreStatus;
+    }
   }
 
 Error:

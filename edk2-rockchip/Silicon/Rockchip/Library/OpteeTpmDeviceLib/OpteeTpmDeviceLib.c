@@ -64,9 +64,10 @@ OpteeTpmDeviceLibConstructor (
 {
   EFI_STATUS  Status;
 
+  // TPL_CALLBACK so Tcg2Dxe's TPL_NOTIFY ExitBootServices measurements still reach the fTPM
   Status = gBS->CreateEvent (
                   EVT_SIGNAL_EXIT_BOOT_SERVICES,
-                  TPL_NOTIFY,
+                  TPL_CALLBACK,
                   ExitBootServicesCallBack,
                   NULL,
                   &ExitBootServicesEvent
