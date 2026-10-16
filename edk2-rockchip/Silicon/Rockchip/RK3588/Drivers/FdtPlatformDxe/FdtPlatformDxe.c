@@ -19,6 +19,7 @@
 #include <Library/FdtLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/NetLib.h>
+#include <Library/OpteeLib.h>
 #include <Library/OtpLib.h>
 #include <Library/PrintLib.h>
 #include <Library/Rk3588Pcie.h>
@@ -987,6 +988,53 @@ FdtFixupGmacMacAddress (
 }
 
 STATIC
+VOID
+EFIAPI
+FdtFixupOptee (
+  IN OUT VOID  **Fdt
+  )
+{
+  EFI_STATUS  Status;
+  INT32       Node;
+  INT32       Ret;
+
+  if (!IsOpteePresent () || (FdtPathOffset (*Fdt, "/firmware/optee") >= 0)) {
+    return;
+  }
+
+  Status = FdtOpenIntoAlloc (Fdt, NULL, FdtTotalSize (*Fdt) + SIZE_1KB);
+  if (EFI_ERROR (Status)) {
+    return;
+  }
+
+  Node = FdtPathOffset (*Fdt, "/firmware");
+  if (Node < 0) {
+    Node = FdtAddSubnode (*Fdt, 0, "firmware");
+  }
+
+  if (Node >= 0) {
+    Node = FdtAddSubnode (*Fdt, Node, "optee");
+  }
+
+  if (Node < 0) {
+    DEBUG ((DEBUG_ERROR, "FdtPlatform: Failed to add OP-TEE node. Ret=%a\n", FdtStrerror (Node)));
+    return;
+  }
+
+  Ret = FdtSetProp (*Fdt, Node, "compatible", "linaro,optee-tz", sizeof ("linaro,optee-tz"));
+  if (Ret == 0) {
+    Ret = FdtSetProp (*Fdt, Node, "method", "smc", sizeof ("smc"));
+  }
+
+  if (Ret < 0) {
+    DEBUG ((DEBUG_ERROR, "FdtPlatform: Failed to set OP-TEE properties. Ret=%a\n", FdtStrerror (Ret)));
+    return;
+  }
+
+  DEBUG ((DEBUG_INFO, "FdtPlatform: OP-TEE detected, added /firmware/optee\n"));
+}
+
+STATIC
 EFI_STATUS
 EFIAPI
 FdtPlatformProcessFileSystem (
@@ -1072,6 +1120,7 @@ FdtPlatformProcessFileSystem (
   // Patch the FDT with our Mac Address
   //
   FdtFixupGmacMacAddress (&NewFdt);
+  FdtFixupOptee (&NewFdt);
 
   //
   // Use the new FDT if it overrides the platform default and/or has
@@ -1452,6 +1501,7 @@ FdtPlatformDxeInitialize (
 
   ApplyPlatformFdtFixups (&mPlatformFdt);
   FdtFixupGmacMacAddress (&mPlatformFdt);
+  FdtFixupOptee (&mPlatformFdt);
 
   Status = gBS->InstallConfigurationTable (&gFdtTableGuid, mPlatformFdt);
   if (EFI_ERROR (Status)) {

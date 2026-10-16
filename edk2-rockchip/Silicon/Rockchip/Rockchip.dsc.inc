@@ -178,6 +178,7 @@
   CpuExceptionHandlerLib|UefiCpuPkg/Library/CpuExceptionHandlerLib/DxeCpuExceptionHandlerLib.inf
   ArmSmcLib|MdePkg/Library/ArmSmcLib/ArmSmcLib.inf
   ArmMonitorLib|ArmPkg/Library/ArmMonitorLib/ArmMonitorLib.inf
+  OpteeLib|ArmPkg/Library/OpteeLib/OpteeLib.inf
   ArmMmuLib|UefiCpuPkg/Library/ArmMmuLib/ArmMmuBaseLib.inf
   ArmLib|MdePkg/Library/ArmLib/ArmBaseLib.inf
   GptLib|MdeModulePkg/Library/GptLib/GptLib.inf
