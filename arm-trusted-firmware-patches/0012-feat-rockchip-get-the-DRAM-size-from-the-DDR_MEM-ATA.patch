@@ -1,0 +1,116 @@
+From d91f47c4492c3d50cc8a4572a5d9ee34df28821a Mon Sep 17 00:00:00 2001
+From: Chris Blake <chrisrblake93@gmail.com>
+Date: Fri, 16 Oct 2026 18:22:02 -0500
+Subject: [PATCH] feat(rockchip): get the DRAM size from the DDR_MEM ATAG
+
+Rockchip's SPL passes BL31 no FDT, so rockchip_get_dram_size() returns 0
+and rk3588 leaves the DDR alias window unprotected.
+
+When no FDT is found, read the DDR_MEM ATAG that the DDR init blob leaves
+at ATAGS_PHYS_BASE instead. It holds the same DRAM banks that U-Boot turns
+into /memory nodes, so the result matches the FDT path.
+---
+ plat/rockchip/common/params_setup.c         | 61 +++++++++++++++++++++
+ plat/rockchip/rk3588/include/platform_def.h |  3 +
+ 2 files changed, 64 insertions(+)
+
+diff --git a/plat/rockchip/common/params_setup.c b/plat/rockchip/common/params_setup.c
+index f34e12f71..26d3c5379 100644
+--- a/plat/rockchip/common/params_setup.c
++++ b/plat/rockchip/common/params_setup.c
+@@ -33,6 +33,10 @@ static int dt_process_fdt(u_register_t param_from_bl2)
+ {
+ 	return -ENODEV;
+ }
++
++static void plat_rockchip_atag_process_dram(void)
++{
++}
+ #else
+ static uint32_t rk_uart_base = PLAT_RK_UART_BASE;
+ static uint32_t rk_uart_baudrate = PLAT_RK_UART_BAUDRATE;
+@@ -184,6 +188,62 @@ static void plat_rockchip_dt_process_fdt_uart(void *fdt)
+ 	rk_uart_baudrate = baud;
+ }
+ 
++#ifdef ATAGS_PHYS_BASE
++#define ATAG_CORE		0x54410001U
++#define ATAG_DDR_MEM		0x54410052U
++#define ATAG_MAX		0x544100ffU
++#define ATAG_DDR_MEM_BANKS	10U
++
++static uint64_t atag_read_64(uintptr_t addr)
++{
++	return ((uint64_t)mmio_read_32(addr + 4U) << 32) | mmio_read_32(addr);
++}
++
++/* Without an FDT, take the top of DRAM from the DDR_MEM ATAG left by the DDR init blob */
++static void plat_rockchip_atag_process_dram(void)
++{
++	uintptr_t tag = ATAGS_PHYS_BASE;
++	uintptr_t end = ATAGS_PHYS_BASE + ATAGS_PHYS_SIZE;
++	uint64_t max_addr = 0U;
++	uint32_t size, type, count, i;
++
++	if (mmio_read_32(tag + 4U) != ATAG_CORE)
++		return;
++
++	while (tag + 8U <= end) {
++		size = mmio_read_32(tag) * 4U;
++		type = mmio_read_32(tag + 4U);
++		if ((size == 0U) || (type == ATAG_MAX) || (size > end - tag))
++			return;
++
++		if (type == ATAG_DDR_MEM) {
++			count = mmio_read_32(tag + 8U);
++			if ((count == 0U) || (count > ATAG_DDR_MEM_BANKS) ||
++			    (size < 16U + 16U * ATAG_DDR_MEM_BANKS))
++				return;
++
++			/* bank bases come first, followed by all bank sizes */
++			for (i = 0U; i < count; i++) {
++				uint64_t base = atag_read_64(tag + 16U + 8U * i);
++				uint64_t len = atag_read_64(tag + 16U + 8U * (i + count));
++
++				if (base + len > max_addr)
++					max_addr = base + len;
++			}
++
++			rk_dram_size = max_addr;
++			return;
++		}
++
++		tag += size;
++	}
++}
++#else
++static void plat_rockchip_atag_process_dram(void)
++{
++}
++#endif
++
+ static int dt_process_fdt(u_register_t param_from_bl2)
+ {
+ 	void *fdt = plat_get_fdt();
+@@ -305,5 +365,6 @@ void params_early_setup(u_register_t plat_param_from_bl2)
+ 		return;
+ 	}
+ 
++	plat_rockchip_atag_process_dram();
+ 	bl_aux_params_parse(plat_param_from_bl2, rk_aux_param_handler);
+ }
+diff --git a/plat/rockchip/rk3588/include/platform_def.h b/plat/rockchip/rk3588/include/platform_def.h
+index afc7f2bf8..148acdf11 100644
+--- a/plat/rockchip/rk3588/include/platform_def.h
++++ b/plat/rockchip/rk3588/include/platform_def.h
+@@ -117,4 +117,7 @@
+ 
+ #define PLAT_RK_PRIMARY_CPU	0x0
+ 
++#define ATAGS_PHYS_SIZE		0x2000
++#define ATAGS_PHYS_BASE		(0x200000 - ATAGS_PHYS_SIZE)/* [2M-8K, 2M] */
++
+ #endif /* __PLATFORM_DEF_H__ */
+-- 
+2.56.0
+
