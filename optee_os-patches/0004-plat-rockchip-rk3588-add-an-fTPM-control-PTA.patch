@@ -1,0 +1,188 @@
+From 63188f264f1c6a67413b859fb1f336587c7e7fd4 Mon Sep 17 00:00:00 2001
+From: Chris Blake <chrisrblake93@gmail.com>
+Date: Fri, 16 Oct 2026 16:29:15 -0500
+Subject: [PATCH 4/4] plat-rockchip: rk3588: add an fTPM control PTA
+
+Firmware uses this PTA to find out whether the fTPM TA is embedded and
+whether secure storage is RPMB only, so it knows when it may talk to the
+fTPM before the OS runs.
+
+It can also hide the fTPM until the next reboot, which turns it off for
+the OS, and lock that choice before handing over to the OS.
+
+The PTA is built when CFG_EARLY_TA is enabled (CFG_RK_FTPM_PTA).
+---
+ core/arch/arm/plat-rockchip/conf.mk       |   3 +
+ core/arch/arm/plat-rockchip/pta_rk_ftpm.h |  24 +++++
+ core/arch/arm/plat-rockchip/rk_ftpm_pta.c | 101 ++++++++++++++++++++++
+ core/arch/arm/plat-rockchip/sub.mk        |   1 +
+ 4 files changed, 129 insertions(+)
+ create mode 100644 core/arch/arm/plat-rockchip/pta_rk_ftpm.h
+ create mode 100644 core/arch/arm/plat-rockchip/rk_ftpm_pta.c
+
+diff --git a/core/arch/arm/plat-rockchip/conf.mk b/core/arch/arm/plat-rockchip/conf.mk
+index 44f7acce8..5de7150bc 100644
+--- a/core/arch/arm/plat-rockchip/conf.mk
++++ b/core/arch/arm/plat-rockchip/conf.mk
+@@ -203,6 +203,9 @@ CFG_RK_SECURE_BOOT ?= y
+ # potentially brick your device.
+ CFG_RK_SECURE_BOOT_SIMULATION ?= y
+ 
++# Lets firmware turn off an embedded fTPM until reboot
++CFG_RK_FTPM_PTA ?= $(CFG_EARLY_TA)
++
+ CFG_TZDRAM_START ?= 0x30000000
+ CFG_TZDRAM_SIZE ?= 0x02000000
+ CFG_SHMEM_START ?= 0x32000000
+diff --git a/core/arch/arm/plat-rockchip/pta_rk_ftpm.h b/core/arch/arm/plat-rockchip/pta_rk_ftpm.h
+new file mode 100644
+index 000000000..8d26351bd
+--- /dev/null
++++ b/core/arch/arm/plat-rockchip/pta_rk_ftpm.h
+@@ -0,0 +1,24 @@
++/* SPDX-License-Identifier: BSD-2-Clause */
++
++#ifndef __PTA_RK_FTPM_H
++#define __PTA_RK_FTPM_H
++
++#define PTA_RK_FTPM_UUID \
++	{ 0xb8c30054, 0x9090, 0x4306, \
++	  { 0x9f, 0x9d, 0x01, 0x26, 0x7f, 0xff, 0xdd, 0x24 } }
++
++#define PTA_RK_FTPM_EMBEDDED		BIT(0)
++#define PTA_RK_FTPM_STORAGE_RPMB	BIT(1)
++#define PTA_RK_FTPM_DISABLED		BIT(2)
++#define PTA_RK_FTPM_LOCKED		BIT(3)
++
++/* [out] value[0].a: PTA_RK_FTPM_* flags */
++#define PTA_RK_FTPM_CMD_GET_INFO	0
++
++/* Hide the fTPM until reboot, refused once locked */
++#define PTA_RK_FTPM_CMD_DISABLE		1
++
++/* Refuse further DISABLE calls until reboot */
++#define PTA_RK_FTPM_CMD_LOCK		2
++
++#endif /* __PTA_RK_FTPM_H */
+diff --git a/core/arch/arm/plat-rockchip/rk_ftpm_pta.c b/core/arch/arm/plat-rockchip/rk_ftpm_pta.c
+new file mode 100644
+index 000000000..d459d4ae0
+--- /dev/null
++++ b/core/arch/arm/plat-rockchip/rk_ftpm_pta.c
+@@ -0,0 +1,101 @@
++// SPDX-License-Identifier: BSD-2-Clause
++
++#include <kernel/early_ta.h>
++#include <kernel/pseudo_ta.h>
++#include <kernel/tee_ta_manager.h>
++#include <kernel/ts_manager.h>
++#include <pta_rk_ftpm.h>
++#include <string.h>
++#include <util.h>
++
++#define PTA_NAME "rk_ftpm.pta"
++
++static const TEE_UUID ftpm_uuid = {
++	0xbc50d971, 0xd4c9, 0x42c4,
++	{ 0x82, 0xcb, 0x34, 0x3f, 0xb7, 0xf3, 0x78, 0x96 }
++};
++
++static bool ftpm_disabled;
++static bool ftpm_locked;
++
++bool plat_ta_is_hidden(const TEE_UUID *uuid)
++{
++	return ftpm_disabled && !memcmp(uuid, &ftpm_uuid, sizeof(*uuid));
++}
++
++static bool ftpm_embedded(void)
++{
++	const struct embedded_ts *ta = NULL;
++
++	for_each_early_ta(ta)
++		if (!memcmp(&ta->uuid, &ftpm_uuid, sizeof(ftpm_uuid)))
++			return true;
++
++	return false;
++}
++
++static TEE_Result get_info(uint32_t types, TEE_Param params[TEE_NUM_PARAMS])
++{
++	uint32_t flags = 0;
++
++	if (types != TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_OUTPUT,
++				     TEE_PARAM_TYPE_NONE,
++				     TEE_PARAM_TYPE_NONE,
++				     TEE_PARAM_TYPE_NONE))
++		return TEE_ERROR_BAD_PARAMETERS;
++
++	if (ftpm_embedded())
++		flags |= PTA_RK_FTPM_EMBEDDED;
++	if (IS_ENABLED(CFG_RPMB_FS) && !IS_ENABLED(CFG_REE_FS))
++		flags |= PTA_RK_FTPM_STORAGE_RPMB;
++	if (ftpm_disabled)
++		flags |= PTA_RK_FTPM_DISABLED;
++	if (ftpm_locked)
++		flags |= PTA_RK_FTPM_LOCKED;
++
++	params[0].value.a = flags;
++	params[0].value.b = 0;
++
++	return TEE_SUCCESS;
++}
++
++static TEE_Result open_session(uint32_t types __unused,
++			       TEE_Param params[TEE_NUM_PARAMS] __unused,
++			       void **sess_ctx __unused)
++{
++	if (ts_get_calling_session())
++		return TEE_ERROR_ACCESS_DENIED;
++
++	return TEE_SUCCESS;
++}
++
++static TEE_Result invoke_command(void *sess_ctx __unused, uint32_t cmd,
++				 uint32_t types,
++				 TEE_Param params[TEE_NUM_PARAMS])
++{
++	switch (cmd) {
++	case PTA_RK_FTPM_CMD_GET_INFO:
++		return get_info(types, params);
++	case PTA_RK_FTPM_CMD_DISABLE:
++		if (types != TEE_PARAM_TYPES(TEE_PARAM_TYPE_NONE,
++					     TEE_PARAM_TYPE_NONE,
++					     TEE_PARAM_TYPE_NONE,
++					     TEE_PARAM_TYPE_NONE))
++			return TEE_ERROR_BAD_PARAMETERS;
++		if (ftpm_locked)
++			return TEE_ERROR_ACCESS_DENIED;
++		ftpm_disabled = true;
++		IMSG("fTPM disabled until reboot");
++		return TEE_SUCCESS;
++	case PTA_RK_FTPM_CMD_LOCK:
++		ftpm_locked = true;
++		return TEE_SUCCESS;
++	default:
++		return TEE_ERROR_NOT_IMPLEMENTED;
++	}
++}
++
++pseudo_ta_register(.uuid = PTA_RK_FTPM_UUID, .name = PTA_NAME,
++		   .flags = PTA_DEFAULT_FLAGS,
++		   .open_session_entry_point = open_session,
++		   .invoke_command_entry_point = invoke_command);
+diff --git a/core/arch/arm/plat-rockchip/sub.mk b/core/arch/arm/plat-rockchip/sub.mk
+index d5f3cd675..187ea7c7f 100644
+--- a/core/arch/arm/plat-rockchip/sub.mk
++++ b/core/arch/arm/plat-rockchip/sub.mk
+@@ -7,6 +7,7 @@ srcs-$(PLATFORM_FLAVOR_rk3399) += platform_rk3399.c
+ srcs-$(PLATFORM_FLAVOR_rk3506) += platform_rk3506.c
+ srcs-$(PLATFORM_FLAVOR_rk3576) += platform_rk3576.c
+ srcs-$(PLATFORM_FLAVOR_rk3588) += platform_rk3588.c
++srcs-$(CFG_RK_FTPM_PTA) += rk_ftpm_pta.c
+ srcs-$(PLATFORM_FLAVOR_rv1106) += platform_rv1106.c
+ 
+ ifneq ($(filter rk322x rv1106, $(PLATFORM_FLAVOR)),)
+-- 
+2.56.0
+
