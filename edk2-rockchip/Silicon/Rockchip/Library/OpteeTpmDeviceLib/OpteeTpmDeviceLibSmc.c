@@ -251,6 +251,7 @@ FreeBuffers (
       OpteeFtpmShmIpBuf,
       EFI_SIZE_TO_PAGES (OpteeFtpmShmInputSize)
       );
+    OpteeFtpmShmIpBuf = NULL;
   }
 
   if (OpteeFtpmShmOpBuf != NULL) {
@@ -258,6 +259,7 @@ FreeBuffers (
       OpteeFtpmShmOpBuf,
       EFI_SIZE_TO_PAGES (OpteeFtpmShmInputSize)
       );
+    OpteeFtpmShmOpBuf = NULL;
   }
 
   if (OpteeFtpmShmInputCookie != 0) {
@@ -265,6 +267,7 @@ FreeBuffers (
       (VOID *)OpteeFtpmShmInputCookie,
       EFI_SIZE_TO_PAGES (sizeof (OPTEE_SHM_COOKIE))
       );
+    OpteeFtpmShmInputCookie = 0;
   }
 
   if (OpteeFtpmShmOutputCookie != 0) {
@@ -272,6 +275,7 @@ FreeBuffers (
       (VOID *)OpteeFtpmShmOutputCookie,
       EFI_SIZE_TO_PAGES (sizeof (OPTEE_SHM_COOKIE))
       );
+    OpteeFtpmShmOutputCookie = 0;
   }
 
   if (FtpmOpteeMessage != NULL) {
@@ -279,6 +283,7 @@ FreeBuffers (
       FtpmOpteeMessage,
       EFI_SIZE_TO_PAGES (sizeof (OPTEE_MESSAGE_ARG))
       );
+    FtpmOpteeMessage = NULL;
   }
 
   if (PageList != NULL) {
@@ -286,6 +291,7 @@ FreeBuffers (
       PageList,
       EFI_SIZE_TO_PAGES (sizeof (OPTEE_SHM_PAGE_LIST))
       );
+    PageList = NULL;
   }
 }
 
@@ -303,19 +309,23 @@ ExitBootServicesCallBack (
   IN VOID       *Context
   )
 {
+  // Memory services are gone after ExitBootServices, so only release OP-TEE state
+  OpteeLibNotifyRuntime (TRUE);
+
+  if (OpteeSessionParam.Session != 0) {
+    OpteeCloseSession (OpteeSessionParam.Session);
+    OpteeSessionParam.Session = 0;
+  }
+
   if (OpteeFtpmShmInputCookie != 0) {
     OpteeUnRegisterShm ((UINT64)OpteeFtpmShmInputCookie);
+    OpteeFtpmShmInputCookie = 0;
   }
 
   if (OpteeFtpmShmOutputCookie != 0) {
     OpteeUnRegisterShm ((UINT64)OpteeFtpmShmOutputCookie);
+    OpteeFtpmShmOutputCookie = 0;
   }
-
-  if (OpteeSessionParam.Session != 0) {
-    OpteeCloseSession (OpteeSessionParam.Session);
-  }
-
-  FreeBuffers ();
 }
 
 /**
