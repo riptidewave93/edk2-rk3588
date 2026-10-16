@@ -400,12 +400,12 @@ The firmware can only be built on Linux currently. For Windows use WSL.
 
    For Ubuntu/Debian:
    ```bash
-   sudo apt install git gcc g++ build-essential gcc-aarch64-linux-gnu acpica-tools python3-pyelftools uuid-dev python-is-python3 device-tree-compiler
+   sudo apt install git gcc g++ build-essential gcc-aarch64-linux-gnu acpica-tools python3-pyelftools python3-cryptography uuid-dev python-is-python3 device-tree-compiler
    ```
    For Arch Linux:
    ```bash
    sudo pacman -Syu
-   sudo pacman -S git base-devel gcc dtc aarch64-linux-gnu-binutils aarch64-linux-gnu-gcc aarch64-linux-gnu-glibc python python-pyelftools iasl --needed
+   sudo pacman -S git base-devel gcc dtc aarch64-linux-gnu-binutils aarch64-linux-gnu-gcc aarch64-linux-gnu-glibc python python-pyelftools python-cryptography iasl --needed
    ```
 
 2. Clone the repository:
@@ -453,6 +453,9 @@ The firmware expects these exact offsets, do not change them.
 Most of the UEFI code is licensed under the default EDK2 license, which is [BSD-2-Clause-Patent](https://github.com/tianocore/edk2/blob/master/License.txt).
 
 Some components ported from Linux and Rockchip's U-Boot fork are licensed as **GPL-2.0** (check `SPDX-License-Identifier`).
+
+Builds with `--optee upstream` also contain:
+* [OP-TEE](https://github.com/OP-TEE/optee_os) from `optee_os/`, licensed as **BSD-2-Clause** unless a file says otherwise. Its bundled libraries keep their own licenses, for example Mbed TLS is **Apache-2.0 OR GPL-2.0-or-later**.
 
 The license for some of the blobs in the `misc/rkbin/` directory can be found at: <https://github.com/rockchip-linux/rkbin/blob/master/LICENSE>. Note that it also contains binaries built from open-source projects such as U-Boot (SPL), Arm Trusted Firmware and OP-TEE, having a different license.
 

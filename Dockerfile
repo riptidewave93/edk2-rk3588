@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     gcc-aarch64-linux-gnu \
     acpica-tools \
     python3-pyelftools \
+    python3-cryptography \
     uuid-dev \
     python-is-python3 \
     device-tree-compiler \
@@ -18,6 +19,7 @@ RUN apt-get update && apt-get install -y \
     && git config --global --add safe.directory /repo \
     && git config --global --add safe.directory /repo/edk2 \
     && git config --global --add safe.directory /repo/arm-trusted-firmware \
-    && git config --global --add safe.directory /repo/devicetree/mainline/upstream
+    && git config --global --add safe.directory /repo/devicetree/mainline/upstream \
+    && git config --global --add safe.directory /repo/optee_os
 
 VOLUME [ "/repo" ]
