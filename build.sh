@@ -12,6 +12,9 @@ function _help(){
     echo "  -t, --toolchain TOOLCHAIN   Set toolchain, default is 'GCC'."
     echo "  --open-tfa ENABLE           Use open-source TF-A submodule. Default: ${OPEN_TFA}"
     echo "  --tfa-flags \"FLAGS\"         Flags appended to open TF-A build process."
+    echo "  --optee SOURCE              OP-TEE to pack as BL32, 'vendor' or 'upstream'. Default: ${OPTEE}"
+    echo "  --optee-enable              Start OP-TEE from open TF-A. Default: ${OPTEE_ENABLE}"
+    echo "  --optee-flags \"FLAGS\"       Flags appended to the upstream OP-TEE build process."
     echo "  --edk2-flags \"FLAGS\"        Flags appended to the EDK2 build process."
     echo "  --skip-patchsets            Skip applying upstream submodule patchsets during development."
     echo "  -C, --clean                 Clean workspace and output."
@@ -78,6 +81,38 @@ function apply_patchset() {
     return 0
 }
 
+function _build_optee() {
+    echo " => Building OP-TEE"
+
+    apply_patchset "${ROOTDIR}/optee_os-patches" "${ROOTDIR}/optee_os" || exit 1
+
+    local OPTEE_DEBUG=0
+    [ "${RELEASE_TYPE}" == "DEBUG" ] && OPTEE_DEBUG=1
+
+    local OPTEE_MAKE=(
+        make -C "${ROOTDIR}/optee_os"
+        O="${WORKSPACE}/optee_os"
+        PLATFORM=rockchip-${SOC_L}
+        CROSS_COMPILE64="${CROSS_COMPILE}"
+        CFG_ARM64_core=y
+        CFG_USER_TA_TARGETS=ta_arm64
+        CFG_RK_SECURE_BOOT=n
+        CFG_CORE_HUK_SUBKEY_COMPAT=y
+        CFG_EARLY_CONSOLE=y
+        CFG_TZDRAM_START=${OPTEE_TZDRAM_START}
+        CFG_TZDRAM_SIZE=${OPTEE_TZDRAM_SIZE}
+        CFG_SHMEM_START=${OPTEE_SHMEM_START}
+        CFG_SHMEM_SIZE=${OPTEE_SHMEM_SIZE}
+        DEBUG=${OPTEE_DEBUG}
+    )
+
+    OPTEE_MAKE+=(${OPTEE_FLAGS})
+
+    "${OPTEE_MAKE[@]}"
+
+    echo " => OP-TEE build done"
+}
+
 function _build_idblock() {
     echo " => Building idblock.bin"
     pushd ${WORKSPACE}
@@ -116,6 +151,10 @@ function _build_fit() {
 
     if ${OPEN_TFA}; then
         BL31="${ROOTDIR}/arm-trusted-firmware/build/${TFA_PLAT}/${RELEASE_TYPE,,}/bl31/bl31.elf"
+    fi
+
+    if [ "${OPTEE}" == "upstream" ]; then
+        BL32="${WORKSPACE}/optee_os/core/tee-raw.bin"
     fi
 
     rm -f bl31_0x*.bin ${WORKSPACE}/BL33_AP_UEFI.Fv ${SOC_L}_${DEVICE}_EFI.its
@@ -238,9 +277,18 @@ function _build(){
             DEBUG=0
         fi
 
-        make PLAT=${TFA_PLAT} DEBUG=${DEBUG} all ${TFA_FLAGS}
+        TFA_OPTEE_FLAGS=""
+        if ${OPTEE_ENABLE}; then
+            TFA_OPTEE_FLAGS="SPD=opteed ROCKCHIP_BL32_BASE=${OPTEE_TZDRAM_START}"
+        fi
+
+        make PLAT=${TFA_PLAT} DEBUG=${DEBUG} all ${TFA_OPTEE_FLAGS} ${TFA_FLAGS}
 
         popd
+    fi
+
+    if [ "${OPTEE}" == "upstream" ]; then
+        _build_optee
     fi
 
     #
@@ -351,6 +399,9 @@ RELEASE_TYPE=DEBUG
 TOOLCHAIN=GCC
 OPEN_TFA=true
 TFA_FLAGS=""
+OPTEE=vendor
+OPTEE_ENABLE=false
+OPTEE_FLAGS=""
 EDK2_FLAGS=""
 SKIP_PATCHSETS=false
 CLEAN=false
@@ -362,7 +413,7 @@ ENABLESECUREBOOT=false
 #
 # Get options
 #
-OPTS=$(getopt -o "d:r:t:CDh" -l "device:,release:,toolchain:,open-tfa:,tfa-flags:,edk2-flags:,skip-patchsets,clean,distclean,secure-boot,enable-secure-boot,help" -n build.sh -- "${@}") || _help $?
+OPTS=$(getopt -o "d:r:t:CDh" -l "device:,release:,toolchain:,open-tfa:,tfa-flags:,optee:,optee-enable,optee-flags:,edk2-flags:,skip-patchsets,clean,distclean,secure-boot,enable-secure-boot,help" -n build.sh -- "${@}") || _help $?
 eval set -- "${OPTS}"
 while true; do
     case "${1}" in
@@ -371,6 +422,9 @@ while true; do
         -t|--toolchain) TOOLCHAIN="${2}"; shift 2 ;;
         --open-tfa) OPEN_TFA="${2}"; shift 2 ;;
         --tfa-flags) TFA_FLAGS="${2}"; shift 2 ;;
+        --optee) OPTEE="${2}"; shift 2 ;;
+        --optee-enable) OPTEE_ENABLE=true; shift ;;
+        --optee-flags) OPTEE_FLAGS="${2}"; shift 2 ;;
         --edk2-flags) EDK2_FLAGS="${2}"; shift 2 ;;
         --skip-patchsets) SKIP_PATCHSETS=true; shift ;;
         -C|--clean) CLEAN=true; shift ;;
@@ -391,6 +445,13 @@ if "${DISTCLEAN}"; then _distclean; exit "$?"; fi
 if "${CLEAN}"; then _clean; exit "$?"; fi
 
 [ -z "${DEVICE}" ] && _help 1
+[[ "${OPTEE}" == "vendor" || "${OPTEE}" == "upstream" ]] || _error "Invalid OP-TEE source '${OPTEE}'"
+if ${OPTEE_ENABLE} && ! ${OPEN_TFA}; then
+    _error "--optee-enable requires the open-source TF-A"
+fi
+if ${OPTEE_ENABLE} && [ "${OPTEE}" == "vendor" ]; then
+    echo "WARNING: The vendor OP-TEE relies on Rockchip BL31 extensions and panics open TF-A." >&2
+fi
 [ -f "configs/${DEVICE}.conf" ] || [ "${DEVICE}" == "all" ] || _error "Device configuration not found"
 
 #
