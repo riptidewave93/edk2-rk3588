@@ -421,6 +421,45 @@ The firmware can only be built on Linux currently. For Windows use WSL.
 
 If you get build errors, it is very likely that you're still missing some dependencies. The list of packages above is not complete and depending on the distro you may need to install additional ones. In most cases, looking up the error messages on the internet will point you at the right packages.
 
+## OP-TEE and fTPM
+By default the firmware includes Rockchip's prebuilt OP-TEE but never starts it. To run upstream OP-TEE with a firmware TPM (fTPM):
+```bash
+./build.sh --device rock-5b --optee upstream --optee-enable --ftpm
+```
+
+| Option                                | Description |
+| ------------------------------------- | ----------- |
+| `--optee vendor\|upstream`            | OP-TEE image to include. `vendor` (default) is the rkbin blob, `upstream` is built from the `optee_os` submodule. |
+| `--optee-enable`                      | Build TF-A with the OP-TEE dispatcher so OP-TEE actually runs. Requires the open-source TF-A. The vendor blob does not work with it. |
+| `--ftpm`                              | Embed the fTPM Trusted Application in upstream OP-TEE. |
+| `--optee-storage ree\|rpmb\|ree+rpmb` | Where OP-TEE keeps secure storage, including the fTPM state. Default: `ree`. |
+| `--optee-flags "FLAGS"`               | Extra flags for the upstream OP-TEE build. |
+
+When OP-TEE is running, the firmware adds a `/firmware/optee` node to the device tree. OP-TEE and the fTPM are therefore only available in Device Tree mode. Linux then exposes the fTPM as `/dev/tpm0`.
+
+### Secure storage
+* `ree` stores encrypted files on the OS filesystem through `tee-supplicant`, which has to run in Linux (`sudo apt install tee-supplicant`). It works on every board.
+* `rpmb` stores everything in the RPMB partition of the eMMC, so it needs eMMC but survives an OS reinstall. The Linux kernel routes RPMB itself, so `tee-supplicant` is not needed. Because of a Linux bug, OP-TEE never finds the RPMB partition when the `mmc_block` module loads before `optee`, and the services that keep their data there, such as the fTPM, do not appear. Until the bug is fixed, make `optee` load before `mmc_block`, for example with `softdep mmc_block pre: optee` in `/etc/modprobe.d/`. If the initramfs loads `mmc_block`, it has to contain `optee` as well.
+  Do not use a `tee-supplicant` built with RPMB emulation together with `rpmb`. The Debian and Ubuntu package is built that way and fakes RPMB in memory.
+
+### One-time provisioning
+Both steps below write to hardware permanently and cannot be undone.
+
+1. **Hardware Unique Key (HUK).** Upstream OP-TEE derives all its keys from it. The first boot with `--optee upstream --optee-enable` generates a random HUK and burns it into the SoC's OTP fuses automatically.
+2. **RPMB key** (`rpmb` storage only). The eMMC needs its RPMB authentication key programmed once:
+   1. Build and flash an image with the same options plus `--rpmb-provision`.
+   2. Boot into Linux once with the setup above. OP-TEE programs the key while Linux brings up RPMB.
+   3. Flash a normal build without `--rpmb-provision`.
+
+   Do not keep the provisioning image installed. Programming the key sends it to the eMMC through Linux in cleartext, so an image that can provision lets a compromised OS obtain the key. The key is derived from the HUK and the eMMC's ID, so firmware updates do not change it.
+
+   **Programming the key binds that eMMC's RPMB to this board.** This matters on boards with removable eMMC modules:
+   * Moved to another board, the module still works as normal storage, but its RPMB cannot be used there, because that board derives a different key. The key on the module can never be changed.
+   * A new module in this board has no key, so the fTPM is unavailable until you repeat the provisioning steps. It then starts out as a new, empty TPM.
+   * The fTPM state stays on the old module. Anything sealed to it, such as a TPM-bound LUKS key, only unseals with that module in this board. Keep a recovery passphrase.
+
+   If you expect to swap modules, consider `ree` storage instead.
+
 # Notes
 
 ## Flash layout
@@ -456,6 +495,7 @@ Some components ported from Linux and Rockchip's U-Boot fork are licensed as **G
 
 Builds with `--optee upstream` also contain:
 * [OP-TEE](https://github.com/OP-TEE/optee_os) from `optee_os/`, licensed as **BSD-2-Clause** unless a file says otherwise. Its bundled libraries keep their own licenses, for example Mbed TLS is **Apache-2.0 OR GPL-2.0-or-later**.
+* With `--ftpm`, the fTPM from [optee_ftpm](https://github.com/OP-TEE/optee_ftpm) and Microsoft's [TPM 2.0 reference implementation](https://github.com/microsoft/ms-tpm-20-ref) from `optee_ftpm/` and `ms-tpm-20-ref/`. Both use Microsoft's BSD license, which states that it grants no patent rights.
 
 The license for some of the blobs in the `misc/rkbin/` directory can be found at: <https://github.com/rockchip-linux/rkbin/blob/master/LICENSE>. Note that it also contains binaries built from open-source projects such as U-Boot (SPL), Arm Trusted Firmware and OP-TEE, having a different license.
 
