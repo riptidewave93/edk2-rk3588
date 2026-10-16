@@ -1,0 +1,49 @@
+#/** @file
+#  OP-TEE lib using secure monitor calls
+#
+#  SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent#
+#
+#**/
+
+[Defines]
+  INF_VERSION                    = 0x0001001A
+  BASE_NAME                      = OpteeNvLib
+  FILE_GUID                      = 29d10b4f-13b2-4139-b936-837cab4c2904
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = OpteeNvLib
+
+[Sources]
+  Optee.c
+  OpteeRpmb.c
+  OpteeSmc.h
+
+[Packages]
+  ArmPkg/ArmPkg.dec
+  MdePkg/MdePkg.dec
+  UefiCpuPkg/UefiCpuPkg.dec
+  Silicon/Rockchip/RockchipPkg.dec
+
+[LibraryClasses]
+  ArmMmuLib
+  ArmSmcLib
+  BaseLib
+  UefiLib
+  UefiRuntimeServicesTableLib
+  UefiBootServicesTableLib
+  DxeServicesTableLib
+  DevicePathLib
+  TimeBaseLib
+  DebugLib
+
+[Protocols]
+  gEfiSdMmcPassThruProtocolGuid ## CONSUMES
+  gEfiDiskInfoProtocolGuid      ## CONSUMES
+
+[Guids]
+  gEfiDiskInfoSdMmcInterfaceGuid  ## CONSUMES
+
+[Depex]
+  TRUE
+

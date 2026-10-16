@@ -493,6 +493,8 @@ Most of the UEFI code is licensed under the default EDK2 license, which is [BSD-
 
 Some components ported from Linux and Rockchip's U-Boot fork are licensed as **GPL-2.0** (check `SPDX-License-Identifier`).
 
+The OP-TEE drivers and libraries that carry NVIDIA's copyright are derived from [edk2-nvidia](https://github.com/NVIDIA/edk2-nvidia) and are also licensed as BSD-2-Clause-Patent.
+
 Builds with `--optee upstream` also contain:
 * [OP-TEE](https://github.com/OP-TEE/optee_os) from `optee_os/`, licensed as **BSD-2-Clause** unless a file says otherwise. Its bundled libraries keep their own licenses, for example Mbed TLS is **Apache-2.0 OR GPL-2.0-or-later**.
 * With `--ftpm`, the fTPM from [optee_ftpm](https://github.com/OP-TEE/optee_ftpm) and Microsoft's [TPM 2.0 reference implementation](https://github.com/microsoft/ms-tpm-20-ref) from `optee_ftpm/` and `ms-tpm-20-ref/`. Both use Microsoft's BSD license, which states that it grants no patent rights.
