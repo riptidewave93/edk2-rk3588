@@ -1,0 +1,98 @@
+/** @file
+
+  SPDX-License-Identifier: BSD-2-Clause-Patent
+
+**/
+
+#include <Uefi/UefiMultiPhase.h>
+#include <Guid/HiiPlatformSetupFormset.h>
+
+#include "FtpmConfigDxe.h"
+
+formset
+  guid      = FTPM_CONFIG_FORMSET_GUID,
+  title     = STRING_TOKEN(STR_FORM_SET_TITLE),
+  help      = STRING_TOKEN(STR_FORM_SET_TITLE_HELP),
+  classguid = EFI_HII_PLATFORM_SETUP_FORMSET_GUID,
+
+  efivarstore FTPM_CONFIG_VARSTORE_DATA,
+  attribute = EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_NON_VOLATILE,
+  name  = FtpmConfigData,
+  guid  = FTPM_CONFIG_FORMSET_GUID;
+
+  efivarstore FTPM_INFO_VARSTORE_DATA,
+  attribute = EFI_VARIABLE_BOOTSERVICE_ACCESS,
+  name  = FtpmInfoData,
+  guid  = FTPM_CONFIG_FORMSET_GUID;
+
+  form formid = 1,
+    title  = STRING_TOKEN(STR_FORM_SET_TITLE);
+
+    text
+      help = STRING_TOKEN(STR_NULL),
+      text = STRING_TOKEN(STR_STATUS_PROMPT),
+      text = STRING_TOKEN(STR_STATUS_VALUE);
+    text
+      help = STRING_TOKEN(STR_NULL),
+      text = STRING_TOKEN(STR_STORAGE_PROMPT),
+      text = STRING_TOKEN(STR_STORAGE_VALUE);
+    suppressif ideqval FtpmInfoData.TpmReady == 0;
+      text
+        help = STRING_TOKEN(STR_NULL),
+        text = STRING_TOKEN(STR_MANUFACTURER_PROMPT),
+        text = STRING_TOKEN(STR_MANUFACTURER_VALUE);
+      text
+        help = STRING_TOKEN(STR_NULL),
+        text = STRING_TOKEN(STR_FIRMWARE_PROMPT),
+        text = STRING_TOKEN(STR_FIRMWARE_VALUE);
+    endif;
+
+    subtitle text = STRING_TOKEN(STR_NULL);
+
+    checkbox varid = FtpmConfigData.Enabled,
+      prompt  = STRING_TOKEN(STR_ENABLED_PROMPT),
+      help    = STRING_TOKEN(STR_ENABLED_HELP),
+      flags   = RESET_REQUIRED,
+      default = TRUE,
+    endcheckbox;
+
+    suppressif ideqval FtpmInfoData.TpmReady == 0;
+      grayoutif ideqval FtpmConfigData.Enabled == 0;
+        oneof varid = FtpmConfigData.Operation,
+          prompt = STRING_TOKEN(STR_OPERATION_PROMPT),
+          help   = STRING_TOKEN(STR_OPERATION_HELP),
+          flags  = RESET_REQUIRED,
+          option text = STRING_TOKEN(STR_OPERATION_NONE),       value = FTPM_OPERATION_NONE,       flags = DEFAULT;
+          option text = STRING_TOKEN(STR_OPERATION_CLEAR),      value = FTPM_OPERATION_CLEAR,      flags = 0;
+          option text = STRING_TOKEN(STR_OPERATION_CHANGE_EPS), value = FTPM_OPERATION_CHANGE_EPS, flags = 0;
+        endoneof;
+
+        subtitle text = STRING_TOKEN(STR_NULL);
+        subtitle text = STRING_TOKEN(STR_PCR_BANKS_SUBTITLE);
+
+        checkbox varid = FtpmConfigData.PcrBankSha1,
+          prompt  = STRING_TOKEN(STR_PCR_BANK_SHA1_PROMPT),
+          help    = STRING_TOKEN(STR_PCR_BANKS_HELP),
+          flags   = RESET_REQUIRED,
+          default = TRUE,
+        endcheckbox;
+        checkbox varid = FtpmConfigData.PcrBankSha256,
+          prompt  = STRING_TOKEN(STR_PCR_BANK_SHA256_PROMPT),
+          help    = STRING_TOKEN(STR_PCR_BANKS_HELP),
+          flags   = RESET_REQUIRED,
+          default = TRUE,
+        endcheckbox;
+        checkbox varid = FtpmConfigData.PcrBankSha384,
+          prompt  = STRING_TOKEN(STR_PCR_BANK_SHA384_PROMPT),
+          help    = STRING_TOKEN(STR_PCR_BANKS_HELP),
+          flags   = RESET_REQUIRED,
+          default = TRUE,
+        endcheckbox;
+      endif;
+    endif;
+
+    suppressif ideqval FtpmInfoData.PreOsAccess == 1;
+      subtitle text = STRING_TOKEN(STR_OS_ONLY_NOTE);
+    endif;
+  endform;
+endformset;

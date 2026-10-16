@@ -75,6 +75,9 @@
 !ifndef RK_AMD_GOP_ENABLE
   DEFINE RK_AMD_GOP_ENABLE              = TRUE
 !endif
+!ifndef RK_FTPM_ENABLE
+  DEFINE RK_FTPM_ENABLE                 = FALSE
+!endif
 
 ################################################################################
 #
@@ -254,6 +257,16 @@
   RockchipDisplayLib|Silicon/Rockchip/Library/DisplayLib/RockchipDisplayLib.inf
 
   BaseVariableLib|Silicon/Rockchip/Library/BaseVariableLib/BaseVariableLib.inf
+
+!if $(RK_FTPM_ENABLE) == TRUE
+  OpteeNvLib|Silicon/Rockchip/Library/OpteeNvLib/OpteeNvLib.inf
+  Tpm2CommandLib|SecurityPkg/Library/Tpm2CommandLib/Tpm2CommandLib.inf
+  Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibTcg2/Tpm2DeviceLibTcg2.inf
+  Tpm2HelpLib|SecurityPkg/Library/Tpm2HelpLib/Tpm2HelpLib.inf
+  Tcg2PhysicalPresenceLib|SecurityPkg/Library/DxeTcg2PhysicalPresenceLib/DxeTcg2PhysicalPresenceLib.inf
+  Tcg2PpVendorLib|SecurityPkg/Library/Tcg2PpVendorLibNull/Tcg2PpVendorLibNull.inf
+  TpmPlatformHierarchyLib|SecurityPkg/Library/PeiDxeTpmPlatformHierarchyLib/PeiDxeTpmPlatformHierarchyLib.inf
+!endif
 
 [LibraryClasses.common.SEC]
   PcdLib|MdePkg/Library/BasePcdLibNull/BasePcdLibNull.inf
@@ -472,6 +485,14 @@ FspiLib|Silicon/Rockchip/Library/FspiLib/FspiLib.inf
   # Default platform supported RFC 4646 languages: (American) English
   gEfiMdePkgTokenSpaceGuid.PcdUefiVariableDefaultPlatformLangCodes|"en-US"
 
+!if $(RK_FTPM_ENABLE) == TRUE
+  gEfiSecurityPkgTokenSpaceGuid.PcdTpmInstanceGuid|{ GUID("286bf25a-c2c3-408c-b3b4-25e6758b7317") }
+
+[PcdsDynamicDefault.common]
+  gEfiSecurityPkgTokenSpaceGuid.PcdTpm2HashMask|0x00000007
+  gEfiSecurityPkgTokenSpaceGuid.PcdTcg2HashAlgorithmBitmap|0x00000007
+!endif
+
 [PcdsDynamicHii.common.DEFAULT]
   gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut|L"Timeout"|gEfiGlobalVariableGuid|0x0|5 # Variable: L"Timeout"
   gEfiMdeModulePkgTokenSpaceGuid.PcdBootDiscoveryPolicy|L"BootDiscoveryPolicy"|gBootDiscoveryPolicyMgrFormsetGuid|0x0|2 # Connect All
@@ -522,6 +543,20 @@ FspiLib|Silicon/Rockchip/Library/FspiLib/FspiLib.inf
   SecurityPkg/VariableAuthenticated/SecureBootDefaultKeysDxe/SecureBootDefaultKeysDxe.inf
 !else
   MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf
+!endif
+!if $(RK_FTPM_ENABLE) == TRUE
+  SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf {
+    <LibraryClasses>
+      HashLib|SecurityPkg/Library/HashLibBaseCryptoRouter/HashLibBaseCryptoRouterDxe.inf
+      NULL|SecurityPkg/Library/HashInstanceLibSha1/HashInstanceLibSha1.inf
+      NULL|SecurityPkg/Library/HashInstanceLibSha256/HashInstanceLibSha256.inf
+      NULL|SecurityPkg/Library/HashInstanceLibSha384/HashInstanceLibSha384.inf
+      Tpm2DeviceLib|Silicon/Rockchip/Library/OpteeTpmDeviceLib/OpteeTpmDeviceLib.inf
+  }
+  Silicon/Rockchip/Drivers/FtpmConfigDxe/FtpmConfigDxe.inf {
+    <LibraryClasses>
+      RngLib|MdePkg/Library/DxeRngLib/DxeRngLib.inf
+  }
 !endif
   MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
   EmbeddedPkg/EmbeddedMonotonicCounter/EmbeddedMonotonicCounter.inf

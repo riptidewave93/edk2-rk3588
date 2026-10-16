@@ -161,6 +161,10 @@
   INF MdeModulePkg/Bus/Sd/SdDxe/SdDxe.inf
   INF MdeModulePkg/Bus/Sd/EmmcDxe/EmmcDxe.inf
 !endif
+!if $(RK_FTPM_ENABLE) == TRUE
+  INF SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf
+  INF Silicon/Rockchip/Drivers/FtpmConfigDxe/FtpmConfigDxe.inf
+!endif
 
   #
   # SD Support

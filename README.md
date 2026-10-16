@@ -442,13 +442,25 @@ When OP-TEE is running, the firmware adds a `/firmware/optee` node to the device
 * `rpmb` stores everything in the RPMB partition of the eMMC, so it needs eMMC but survives an OS reinstall. The Linux kernel routes RPMB itself, so `tee-supplicant` is not needed. Because of a Linux bug, OP-TEE never finds the RPMB partition when the `mmc_block` module loads before `optee`, and the services that keep their data there, such as the fTPM, do not appear. Until the bug is fixed, make `optee` load before `mmc_block`, for example with `softdep mmc_block pre: optee` in `/etc/modprobe.d/`. If the initramfs loads `mmc_block`, it has to contain `optee` as well.
   Do not use a `tee-supplicant` built with RPMB emulation together with `rpmb`. The Debian and Ubuntu package is built that way and fakes RPMB in memory.
 
+### fTPM settings
+Builds with `--ftpm` add a **Firmware TPM Configuration** page under Device Manager in the firmware setup. Changing a setting reboots the board to apply it.
+
+* **Firmware TPM** turns the fTPM on or off. When it is off, OP-TEE hides it and the OS does not see a TPM. Available with every storage option.
+* With `rpmb` storage the firmware also talks to the fTPM before the OS starts. The page then shows the TPM's manufacturer and firmware version and offers:
+  * **Pending TPM Operation**: `Clear TPM` erases all keys and data in the TPM. `Change EPS` gives the TPM a new endorsement key. Either runs once on the next boot.
+  * **Active PCR Banks**: SHA1, SHA256 and SHA384.
+
+  Before the OS starts, the firmware also locks the TPM's platform hierarchy with a random password. It records Secure Boot variables and boot phase events in the TPM event log, but does not measure loaded images yet, so this is not full measured boot.
+
+With `ree` or `ree+rpmb` storage the firmware cannot reach the fTPM, because its state is only available once `tee-supplicant` runs in Linux. Only the on/off setting is offered there, and the platform hierarchy stays open to the OS.
+
 ### One-time provisioning
 Both steps below write to hardware permanently and cannot be undone.
 
 1. **Hardware Unique Key (HUK).** Upstream OP-TEE derives all its keys from it. The first boot with `--optee upstream --optee-enable` generates a random HUK and burns it into the SoC's OTP fuses automatically.
 2. **RPMB key** (`rpmb` storage only). The eMMC needs its RPMB authentication key programmed once:
    1. Build and flash an image with the same options plus `--rpmb-provision`.
-   2. Boot into Linux once with the setup above. OP-TEE programs the key while Linux brings up RPMB.
+   2. Boot into Linux once with the setup above. OP-TEE programs the key while Linux brings up RPMB. This image leaves out the fTPM settings page, because the firmware cannot program the key itself.
    3. Flash a normal build without `--rpmb-provision`.
 
    Do not keep the provisioning image installed. Programming the key sends it to the eMMC through Linux in cleartext, so an image that can provision lets a compromised OS obtain the key. The key is derived from the HUK and the eMMC's ID, so firmware updates do not change it.
