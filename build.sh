@@ -15,6 +15,12 @@ function _help(){
     echo "  --optee SOURCE              OP-TEE to pack as BL32, 'vendor' or 'upstream'. Default: ${OPTEE}"
     echo "  --optee-enable              Start OP-TEE from open TF-A. Default: ${OPTEE_ENABLE}"
     echo "  --optee-flags \"FLAGS\"       Flags appended to the upstream OP-TEE build process."
+    echo "  --optee-storage STORAGE     Upstream OP-TEE secure storage, 'ree', 'rpmb' or 'ree+rpmb'. Default: ${OPTEE_STORAGE}"
+    echo "                              'rpmb' and 'ree+rpmb' imply --optee upstream."
+    echo "  --ftpm                      Embed the fTPM TA in upstream OP-TEE. Default: ${FTPM}"
+    echo "                              Implies --optee upstream --optee-enable."
+    echo "  --rpmb-provision            One-time build that programs the eMMC RPMB key. Default: ${RPMB_PROVISION}"
+    echo "                              Implies --optee upstream --optee-enable, needs an RPMB --optee-storage."
     echo "  --edk2-flags \"FLAGS\"        Flags appended to the EDK2 build process."
     echo "  --skip-patchsets            Skip applying upstream submodule patchsets during development."
     echo "  -C, --clean                 Clean workspace and output."
@@ -106,7 +112,36 @@ function _build_optee() {
         DEBUG=${OPTEE_DEBUG}
     )
 
+    case "${OPTEE_STORAGE}" in
+        rpmb) OPTEE_MAKE+=(CFG_REE_FS=n CFG_RPMB_FS=y) ;;
+        ree+rpmb) OPTEE_MAKE+=(CFG_RPMB_FS=y CFG_REE_FS_INTEGRITY_RPMB=y) ;;
+    esac
+
+    if [ "${OPTEE_STORAGE}" != "ree" ]; then
+        OPTEE_MAKE+=(CFG_RPMB_FS_DEV_ID=${OPTEE_RPMB_DEV_ID:-0})
+        # Every RPMB file open walks the FAT, cache it instead of rereading it from the eMMC
+        OPTEE_MAKE+=(CFG_RPMB_FS_CACHE_ENTRIES=128 CFG_CORE_HEAP_SIZE=196608)
+    fi
+
+    if ${RPMB_PROVISION}; then
+        OPTEE_MAKE+=(CFG_RPMB_WRITE_KEY=y)
+    fi
+
     OPTEE_MAKE+=(${OPTEE_FLAGS})
+
+    if ${FTPM}; then
+        OPTEE_MAKE+=(CFG_EARLY_TA=y)
+        "${OPTEE_MAKE[@]}" ta_dev_kit
+
+        echo " => Building fTPM TA"
+        make -C "${ROOTDIR}/optee_ftpm" \
+            O="${WORKSPACE}/optee_ftpm" \
+            TA_DEV_KIT_DIR="${WORKSPACE}/optee_os/export-ta_arm64" \
+            CFG_MS_TPM_20_REF="${ROOTDIR}/ms-tpm-20-ref" \
+            CROSS_COMPILE="${CROSS_COMPILE}"
+
+        OPTEE_MAKE+=(EARLY_TA_PATHS="${WORKSPACE}/optee_ftpm/${FTPM_UUID}.stripped.elf")
+    fi
 
     "${OPTEE_MAKE[@]}"
 
@@ -400,8 +435,13 @@ TOOLCHAIN=GCC
 OPEN_TFA=true
 TFA_FLAGS=""
 OPTEE=vendor
+OPTEE_SET=false
 OPTEE_ENABLE=false
 OPTEE_FLAGS=""
+OPTEE_STORAGE=ree
+FTPM=false
+RPMB_PROVISION=false
+FTPM_UUID=bc50d971-d4c9-42c4-82cb-343fb7f37896
 EDK2_FLAGS=""
 SKIP_PATCHSETS=false
 CLEAN=false
@@ -413,7 +453,7 @@ ENABLESECUREBOOT=false
 #
 # Get options
 #
-OPTS=$(getopt -o "d:r:t:CDh" -l "device:,release:,toolchain:,open-tfa:,tfa-flags:,optee:,optee-enable,optee-flags:,edk2-flags:,skip-patchsets,clean,distclean,secure-boot,enable-secure-boot,help" -n build.sh -- "${@}") || _help $?
+OPTS=$(getopt -o "d:r:t:CDh" -l "device:,release:,toolchain:,open-tfa:,tfa-flags:,optee:,optee-enable,optee-flags:,optee-storage:,ftpm,rpmb-provision,edk2-flags:,skip-patchsets,clean,distclean,secure-boot,enable-secure-boot,help" -n build.sh -- "${@}") || _help $?
 eval set -- "${OPTS}"
 while true; do
     case "${1}" in
@@ -422,9 +462,12 @@ while true; do
         -t|--toolchain) TOOLCHAIN="${2}"; shift 2 ;;
         --open-tfa) OPEN_TFA="${2}"; shift 2 ;;
         --tfa-flags) TFA_FLAGS="${2}"; shift 2 ;;
-        --optee) OPTEE="${2}"; shift 2 ;;
+        --optee) OPTEE="${2}"; OPTEE_SET=true; shift 2 ;;
         --optee-enable) OPTEE_ENABLE=true; shift ;;
         --optee-flags) OPTEE_FLAGS="${2}"; shift 2 ;;
+        --optee-storage) OPTEE_STORAGE="${2}"; shift 2 ;;
+        --ftpm) FTPM=true; shift ;;
+        --rpmb-provision) RPMB_PROVISION=true; shift ;;
         --edk2-flags) EDK2_FLAGS="${2}"; shift 2 ;;
         --skip-patchsets) SKIP_PATCHSETS=true; shift ;;
         -C|--clean) CLEAN=true; shift ;;
@@ -445,12 +488,28 @@ if "${DISTCLEAN}"; then _distclean; exit "$?"; fi
 if "${CLEAN}"; then _clean; exit "$?"; fi
 
 [ -z "${DEVICE}" ] && _help 1
+[[ "${OPTEE_STORAGE}" =~ ^(ree|rpmb|ree\+rpmb)$ ]] || _error "Invalid OP-TEE storage '${OPTEE_STORAGE}'"
+if ${RPMB_PROVISION} && [ "${OPTEE_STORAGE}" == "ree" ]; then
+    _error "--rpmb-provision requires an RPMB --optee-storage"
+fi
+if ${FTPM} || ${RPMB_PROVISION}; then
+    OPTEE_ENABLE=true
+fi
+if ${FTPM} || ${RPMB_PROVISION} || [ "${OPTEE_STORAGE}" != "ree" ]; then
+    if ${OPTEE_SET} && [ "${OPTEE}" != "upstream" ]; then
+        _error "--ftpm, --rpmb-provision and RPMB storage require --optee upstream"
+    fi
+    OPTEE=upstream
+fi
 [[ "${OPTEE}" == "vendor" || "${OPTEE}" == "upstream" ]] || _error "Invalid OP-TEE source '${OPTEE}'"
 if ${OPTEE_ENABLE} && ! ${OPEN_TFA}; then
     _error "--optee-enable requires the open-source TF-A"
 fi
 if ${OPTEE_ENABLE} && [ "${OPTEE}" == "vendor" ]; then
     echo "WARNING: The vendor OP-TEE relies on Rockchip BL31 extensions and panics open TF-A." >&2
+fi
+if ${RPMB_PROVISION}; then
+    echo "WARNING: This image permanently programs the eMMC RPMB key. Boot it once, then flash a normal build." >&2
 fi
 [ -f "configs/${DEVICE}.conf" ] || [ "${DEVICE}" == "all" ] || _error "Device configuration not found"
 
