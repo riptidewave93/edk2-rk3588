@@ -19,6 +19,8 @@ function _help(){
     echo "                              'rpmb' and 'ree+rpmb' imply --optee upstream."
     echo "  --ftpm                      Embed the fTPM TA in upstream OP-TEE. Default: ${FTPM}"
     echo "                              Implies --optee upstream --optee-enable."
+    echo "  --stmm                      Keep the UEFI variables in RPMB through Standalone MM in OP-TEE. Default: ${STMM}"
+    echo "                              Implies --optee upstream --optee-enable, needs an RPMB --optee-storage."
     echo "  --rpmb-provision            One-time build that programs the eMMC RPMB key. Default: ${RPMB_PROVISION}"
     echo "                              Implies --optee upstream --optee-enable, needs an RPMB --optee-storage."
     echo "  --edk2-flags \"FLAGS\"        Flags appended to the EDK2 build process."
@@ -129,6 +131,13 @@ function _build_optee() {
 
     OPTEE_MAKE+=(${OPTEE_FLAGS})
 
+    if ${STMM} && ! ${RPMB_PROVISION}; then
+        OPTEE_MAKE+=(
+            CFG_STMM_PATH="${WORKSPACE}/Build/RockchipStandaloneMm/${RELEASE_TYPE}_${TOOLCHAIN}/FV/BL32_AP_MM.fd"
+            CFG_STMM_HEAP_PAGE_COUNT=800
+        )
+    fi
+
     if ${FTPM}; then
         OPTEE_MAKE+=(CFG_EARLY_TA=y)
         "${OPTEE_MAKE[@]}" ta_dev_kit
@@ -146,6 +155,18 @@ function _build_optee() {
     "${OPTEE_MAKE[@]}"
 
     echo " => OP-TEE build done"
+}
+
+function _build_stmm() {
+    echo " => Building Standalone MM"
+    build \
+        -s \
+        -n 0 \
+        -a AARCH64 \
+        -t "${TOOLCHAIN}" \
+        -p "${ROOTDIR}/edk2-rockchip/Silicon/Rockchip/StandaloneMm/RockchipStandaloneMm.dsc" \
+        -b "${RELEASE_TYPE}"
+    echo " => Standalone MM build done"
 }
 
 function _build_idblock() {
@@ -322,12 +343,8 @@ function _build(){
         popd
     fi
 
-    if [ "${OPTEE}" == "upstream" ]; then
-        _build_optee
-    fi
-
     #
-    # Build EDK2
+    # Set up EDK2, OP-TEE embeds the Standalone MM image built with it
     #
     apply_patchset "${ROOTDIR}/edk2-patches" "${ROOTDIR}/edk2" || exit 1
     apply_patchset "${ROOTDIR}/edk2-platforms-patches" "${ROOTDIR}/edk2-platforms" || exit 1
@@ -349,9 +366,23 @@ function _build(){
     make -C "${ROOTDIR}/edk2/BaseTools"
     source "${ROOTDIR}/edk2/edksetup.sh" --reconfig
 
+    if [ "${OPTEE}" == "upstream" ]; then
+        if ${STMM} && ! ${RPMB_PROVISION}; then
+            _build_stmm
+        fi
+        _build_optee
+    fi
+
+    #
+    # Build EDK2
+    #
+
     # The EDK2 RPMB client cannot program the key, so provisioning goes through Linux
     if ${FTPM} && ! ${RPMB_PROVISION}; then
         EDK2_FLAGS="${EDK2_FLAGS} -D RK_FTPM_ENABLE=TRUE"
+    fi
+    if ${STMM} && ! ${RPMB_PROVISION}; then
+        EDK2_FLAGS="${EDK2_FLAGS} -D RK_STMM_ENABLE=TRUE"
     fi
 
     if "${SECUREBOOT}"; then
@@ -446,6 +477,7 @@ OPTEE_ENABLE=false
 OPTEE_FLAGS=""
 OPTEE_STORAGE=ree
 FTPM=false
+STMM=false
 RPMB_PROVISION=false
 FTPM_UUID=bc50d971-d4c9-42c4-82cb-343fb7f37896
 EDK2_FLAGS=""
@@ -459,7 +491,7 @@ ENABLESECUREBOOT=false
 #
 # Get options
 #
-OPTS=$(getopt -o "d:r:t:CDh" -l "device:,release:,toolchain:,open-tfa:,tfa-flags:,optee:,optee-enable,optee-flags:,optee-storage:,ftpm,rpmb-provision,edk2-flags:,skip-patchsets,clean,distclean,secure-boot,enable-secure-boot,help" -n build.sh -- "${@}") || _help $?
+OPTS=$(getopt -o "d:r:t:CDh" -l "device:,release:,toolchain:,open-tfa:,tfa-flags:,optee:,optee-enable,optee-flags:,optee-storage:,ftpm,stmm,rpmb-provision,edk2-flags:,skip-patchsets,clean,distclean,secure-boot,enable-secure-boot,help" -n build.sh -- "${@}") || _help $?
 eval set -- "${OPTS}"
 while true; do
     case "${1}" in
@@ -473,6 +505,7 @@ while true; do
         --optee-flags) OPTEE_FLAGS="${2}"; shift 2 ;;
         --optee-storage) OPTEE_STORAGE="${2}"; shift 2 ;;
         --ftpm) FTPM=true; shift ;;
+        --stmm) STMM=true; shift ;;
         --rpmb-provision) RPMB_PROVISION=true; shift ;;
         --edk2-flags) EDK2_FLAGS="${2}"; shift 2 ;;
         --skip-patchsets) SKIP_PATCHSETS=true; shift ;;
@@ -495,15 +528,15 @@ if "${CLEAN}"; then _clean; exit "$?"; fi
 
 [ -z "${DEVICE}" ] && _help 1
 [[ "${OPTEE_STORAGE}" =~ ^(ree|rpmb|ree\+rpmb)$ ]] || _error "Invalid OP-TEE storage '${OPTEE_STORAGE}'"
-if ${RPMB_PROVISION} && [ "${OPTEE_STORAGE}" == "ree" ]; then
-    _error "--rpmb-provision requires an RPMB --optee-storage"
+if ( ${STMM} || ${RPMB_PROVISION} ) && [ "${OPTEE_STORAGE}" == "ree" ]; then
+    _error "--stmm and --rpmb-provision require an RPMB --optee-storage"
 fi
-if ${FTPM} || ${RPMB_PROVISION}; then
+if ${FTPM} || ${STMM} || ${RPMB_PROVISION}; then
     OPTEE_ENABLE=true
 fi
-if ${FTPM} || ${RPMB_PROVISION} || [ "${OPTEE_STORAGE}" != "ree" ]; then
+if ${FTPM} || ${STMM} || ${RPMB_PROVISION} || [ "${OPTEE_STORAGE}" != "ree" ]; then
     if ${OPTEE_SET} && [ "${OPTEE}" != "upstream" ]; then
-        _error "--ftpm, --rpmb-provision and RPMB storage require --optee upstream"
+        _error "--ftpm, --stmm, --rpmb-provision and RPMB storage require --optee upstream"
     fi
     OPTEE=upstream
 fi

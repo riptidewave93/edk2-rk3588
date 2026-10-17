@@ -433,6 +433,7 @@ By default the firmware includes Rockchip's prebuilt OP-TEE but never starts it.
 | `--optee-enable`                      | Build TF-A with the OP-TEE dispatcher so OP-TEE actually runs. Requires the open-source TF-A. The vendor blob does not work with it. |
 | `--ftpm`                              | Embed the fTPM Trusted Application in upstream OP-TEE. Implies `--optee upstream --optee-enable`. |
 | `--optee-storage ree\|rpmb\|ree+rpmb` | Where OP-TEE keeps secure storage, including the fTPM state. Default: `ree`. `rpmb` and `ree+rpmb` imply `--optee upstream`. |
+| `--stmm`                              | Keep the UEFI variables in RPMB, see [UEFI variables in RPMB](#uefi-variables-in-rpmb). Implies `--optee upstream --optee-enable` and needs `rpmb` or `ree+rpmb` storage. |
 | `--optee-flags "FLAGS"`               | Extra flags for the upstream OP-TEE build. |
 
 When OP-TEE is running, the firmware adds a `/firmware/optee` node to the device tree. OP-TEE and the fTPM are therefore only available in Device Tree mode. Linux then exposes the fTPM as `/dev/tpm0`.
@@ -471,6 +472,19 @@ Both steps below write to hardware permanently and cannot be undone.
    * The fTPM state stays on the old module. Anything sealed to it, such as a TPM-bound LUKS key, only unseals with that module in this board. Keep a recovery passphrase.
 
    If you expect to swap modules, consider `ree` storage instead.
+
+### UEFI variables in RPMB
+By default the UEFI variables, which hold the boot order, the setup settings and the Secure Boot keys, sit in the firmware flash, where anything that can write the flash can change or erase them. `--stmm` moves them into the RPMB partition of the eMMC instead. EDK2's variable service then runs as Standalone MM inside OP-TEE, which enforces the rules for authenticated variables such as the Secure Boot keys.
+```bash
+./build.sh --device rock-5b --optee-storage rpmb --ftpm --stmm
+```
+Provision the RPMB key first, see [One-time provisioning](#one-time-provisioning). The provisioning image keeps the variables in flash.
+
+* **Linux reaches the variables through its `tee_stmm_efi` driver.** It needs the module order from [Secure storage](#secure-storage), and it has to load before `efivarfs` is mounted, for example from the initramfs. Without the driver Linux sees no EFI variables, so `efibootmgr`, the boot entry that `grub-install` writes, `bootctl` and firmware updates through fwupd do not work. Change boot settings in the firmware setup instead.
+* **The first boot reboots once.** With no boot entry for the OS yet, the firmware starts shim from the removable media path. shim creates the entry and reboots.
+* **The board needs its eMMC with a provisioned RPMB key.** The variables go to the RPMB of the eMMC, even when EDK2 itself boots from an SD card. Without an eMMC fitted, or before the RPMB key is provisioned, the variable service cannot start and the firmware stops before the boot menu. On boards with removable eMMC modules, only use `--stmm` with the module fitted. The binding described above applies to the variables too, so a new module starts with default settings.
+* Erasing or reflashing the firmware flash no longer resets the settings.
+* Booting takes about 1.5 seconds longer.
 
 # Notes
 
