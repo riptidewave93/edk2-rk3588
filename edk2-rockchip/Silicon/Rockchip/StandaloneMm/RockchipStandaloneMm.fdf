@@ -1,0 +1,56 @@
+#
+#  Based on edk2-platforms PlatformStandaloneMmRpmb.fdf.
+#
+#  Copyright (c) 2018-2024, Arm Limited. All rights reserved.
+#  Copyright (c) 2020, Linaro Ltd. All rights reserved.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+
+[FD.BL32_AP_MM]
+BaseAddress   = 0x1000 # any address apart from 0x0
+Size          = 0x00300000
+ErasePolarity = 1
+
+BlockSize     = 0x00001000
+NumBlocks     = 0x0300
+
+0x00000000|0x00280000
+FV = FVMAIN_COMPACT
+
+[FV.FVMAIN_COMPACT]
+FvAlignment        = 8
+ERASE_POLARITY     = 1
+MEMORY_MAPPED      = TRUE
+STICKY_WRITE       = TRUE
+LOCK_CAP           = TRUE
+LOCK_STATUS        = TRUE
+WRITE_DISABLED_CAP = TRUE
+WRITE_ENABLED_CAP  = TRUE
+WRITE_STATUS       = TRUE
+WRITE_LOCK_CAP     = TRUE
+WRITE_LOCK_STATUS  = TRUE
+READ_DISABLED_CAP  = TRUE
+READ_ENABLED_CAP   = TRUE
+READ_STATUS        = TRUE
+READ_LOCK_CAP      = TRUE
+READ_LOCK_STATUS   = TRUE
+
+  INF StandaloneMmPkg/Core/StandaloneMmCore.inf
+  INF Drivers/OpTee/OpteeRpmbPkg/OpTeeRpmbFv.inf
+  INF MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteStandaloneMm.inf
+  INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableStandaloneMm.inf
+  INF ArmPkg/Drivers/StandaloneMmCpu/StandaloneMmCpu.inf
+
+[Rule.Common.MM_CORE_STANDALONE]
+  FILE SEC = $(NAMED_GUID) FIXED {
+    PE32  PE32 Align = Auto             $(INF_OUTPUT)/$(MODULE_NAME).efi
+  }
+
+[Rule.Common.MM_STANDALONE]
+  FILE MM_STANDALONE = $(NAMED_GUID) {
+    SMM_DEPEX SMM_DEPEX Optional       $(INF_OUTPUT)/$(MODULE_NAME).depex
+    PE32      PE32                     $(INF_OUTPUT)/$(MODULE_NAME).efi
+    UI        STRING="$(MODULE_NAME)" Optional
+    VERSION   STRING="$(INF_VERSION)" Optional BUILD_NUM=$(BUILD_NUMBER)
+  }
