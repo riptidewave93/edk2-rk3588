@@ -1,0 +1,54 @@
+## @file
+#
+#  SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = OpteeMmCommunicationDxe
+  FILE_GUID                      = 0d6ad4f2-34e3-4780-b4f5-b8bbe40ba1d7
+  MODULE_TYPE                    = DXE_RUNTIME_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = OpteeMmCommunicationInitialize
+
+[Sources]
+  OpteeMmCommunicationDxe.c
+
+[Packages]
+  ArmPkg/ArmPkg.dec
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  Silicon/Rockchip/RockchipPkg.dec
+
+[LibraryClasses]
+  BaseMemoryLib
+  DebugLib
+  MemoryAllocationLib
+  OpteeNvLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiRuntimeLib
+  UefiRuntimeServicesTableLib
+
+[Protocols]
+  gEfiMmCommunication2ProtocolGuid           ## PRODUCES
+  gEfiSmmVariableProtocolGuid                ## PRODUCES
+  gEdkiiNonDiscoverableDeviceProtocolGuid    ## CONSUMES
+
+[Guids]
+  gEdkiiNonDiscoverableSdhciDeviceGuid
+  gEfiEndOfDxeEventGroupGuid
+  gEfiEventExitBootServicesGuid
+  gEfiEventReadyToBootGuid
+  gEfiRtPropertiesTableGuid
+  gSmmVariableWriteGuid
+
+# The eMMC stack is in the APRIORI list, it must be bound before the first RPMB request
+[Depex]
+  gEfiCpuArchProtocolGuid AND
+  gEfiMetronomeArchProtocolGuid AND
+  gEfiTimerArchProtocolGuid AND
+  gEdkiiSdMmcOverrideProtocolGuid
