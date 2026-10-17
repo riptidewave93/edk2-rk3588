@@ -78,6 +78,9 @@
 !ifndef RK_FTPM_ENABLE
   DEFINE RK_FTPM_ENABLE                 = FALSE
 !endif
+!ifndef RK_STMM_ENABLE
+  DEFINE RK_STMM_ENABLE                 = FALSE
+!endif
 
 ################################################################################
 #
@@ -258,8 +261,11 @@
 
   BaseVariableLib|Silicon/Rockchip/Library/BaseVariableLib/BaseVariableLib.inf
 
-!if $(RK_FTPM_ENABLE) == TRUE
+!if $(RK_FTPM_ENABLE) == TRUE || $(RK_STMM_ENABLE) == TRUE
   OpteeNvLib|Silicon/Rockchip/Library/OpteeNvLib/OpteeNvLib.inf
+!endif
+
+!if $(RK_FTPM_ENABLE) == TRUE
   Tpm2CommandLib|SecurityPkg/Library/Tpm2CommandLib/Tpm2CommandLib.inf
   Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibTcg2/Tpm2DeviceLibTcg2.inf
   Tpm2HelpLib|SecurityPkg/Library/Tpm2HelpLib/Tpm2HelpLib.inf
@@ -600,6 +606,10 @@ FspiLib|Silicon/Rockchip/Library/FspiLib/FspiLib.inf
 !if $(RK_NOR_FLASH_ENABLE) == TRUE
   Silicon/Rockchip/Drivers/NorFlashDxe/NorFlashDxe.inf
 !endif
+!if $(RK_STMM_ENABLE) == TRUE
+  Silicon/Rockchip/Drivers/OpteeMmCommunicationDxe/OpteeMmCommunicationDxe.inf
+  MdeModulePkg/Universal/Variable/RuntimeDxe/VariableSmmRuntimeDxe.inf
+!else
   Silicon/Rockchip/Drivers/RkFvbDxe/RkFvbDxe.inf
   MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf {
     <LibraryClasses>
@@ -607,6 +617,7 @@ FspiLib|Silicon/Rockchip/Library/FspiLib/FspiLib.inf
       NULL|EmbeddedPkg/Library/NvVarStoreFormattedLib/NvVarStoreFormattedLib.inf
   }
   MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteDxe.inf
+!endif
 
   #
   # Multiple Console IO support

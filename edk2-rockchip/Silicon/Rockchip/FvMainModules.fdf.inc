@@ -57,9 +57,14 @@
 !if $(RK_NOR_FLASH_ENABLE) == TRUE
   INF Silicon/Rockchip/Drivers/NorFlashDxe/NorFlashDxe.inf
 !endif
+!if $(RK_STMM_ENABLE) == TRUE
+  INF Silicon/Rockchip/Drivers/OpteeMmCommunicationDxe/OpteeMmCommunicationDxe.inf
+  INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableSmmRuntimeDxe.inf
+!else
   INF Silicon/Rockchip/Drivers/RkFvbDxe/RkFvbDxe.inf
   INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
   INF MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteDxe.inf
+!endif
 
   #
   # Multiple Console IO support

@@ -11,3 +11,14 @@
 !endif
 
   INF MdeModulePkg/Universal/PCD/Dxe/Pcd.inf
+
+!if $(RK_STMM_ENABLE) == TRUE
+  # The UEFI variables live in RPMB, so the eMMC stack cannot wait for the variable arch protocols
+  INF ArmPkg/Drivers/CpuDxe/CpuDxe.inf
+  # DxeCore connects the eMMC as soon as DwcSdhciDxe registers it, and identification needs Stall()
+  INF EmbeddedPkg/MetronomeDxe/MetronomeDxe.inf
+  INF MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf
+  INF MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.inf
+  INF MdeModulePkg/Bus/Sd/EmmcDxe/EmmcDxe.inf
+  INF Silicon/Rockchip/Drivers/DwcSdhciDxe/DwcSdhciDxe.inf
+!endif
