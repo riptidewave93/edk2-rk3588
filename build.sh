@@ -330,6 +330,7 @@ function _build(){
     # Build EDK2
     #
     apply_patchset "${ROOTDIR}/edk2-patches" "${ROOTDIR}/edk2" || exit 1
+    apply_patchset "${ROOTDIR}/edk2-platforms-patches" "${ROOTDIR}/edk2-platforms" || exit 1
     apply_patchset "${ROOTDIR}/devicetree/mainline/patches" "${ROOTDIR}/devicetree/mainline/upstream" || exit 1
 
     [ -d "${WORKSPACE}/Conf" ] || mkdir -p "${WORKSPACE}/Conf"

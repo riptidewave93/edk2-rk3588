@@ -1,0 +1,122 @@
+From 3fb54c736f73d6b93ee29cf17ebffb28cbb9810a Mon Sep 17 00:00:00 2001
+From: Chris Blake <chrisrblake93@gmail.com>
+Date: Sat, 17 Oct 2026 07:56:46 -0500
+Subject: [PATCH] Drivers/OpTee/OpteeRpmbPkg: Write the RPMB file one block at
+ a time
+
+OP-TEE updates an RPMB file in place only when a write fits in the eMMC
+reliable write size. Anything larger makes it allocate a new copy of the
+whole file, read the old one and write all of it back. Every variable
+update goes through fault tolerant write in 4 KiB blocks, so each one
+rewrote the entire variable store several times over.
+
+Split writes into single RPMB blocks so OP-TEE always updates in place.
+Fault tolerant write already copes with torn writes, as it does on NOR
+flash.
+
+The first write that creates the file is left whole.
+---
+ Drivers/OpTee/OpteeRpmbPkg/OpTeeRpmbFvb.c | 59 ++++++++++++++++++-----
+ 1 file changed, 46 insertions(+), 13 deletions(-)
+
+diff --git a/Drivers/OpTee/OpteeRpmbPkg/OpTeeRpmbFvb.c b/Drivers/OpTee/OpteeRpmbPkg/OpTeeRpmbFvb.c
+index dfe758fd8a..bbd15c365d 100644
+--- a/Drivers/OpTee/OpteeRpmbPkg/OpTeeRpmbFvb.c
++++ b/Drivers/OpTee/OpteeRpmbPkg/OpTeeRpmbFvb.c
+@@ -34,6 +34,9 @@
+ //
+ STATIC CONST UINT16 mStorageId = 4U;
+ 
++// Data bytes in one RPMB frame
++#define RPMB_BLOCK_SIZE  256U
++
+ STATIC MEM_INSTANCE mInstance;
+ 
+ /**
+@@ -92,6 +95,46 @@ ReadWriteRpmb (
+   return Status;
+ }
+ 
++/**
++  Writes to the RPMB file one RPMB block at a time
++
++  OP-TEE updates a file in place only when a write fits in the eMMC reliable
++  write size, and otherwise copies the whole file. Fault tolerant write already
++  handles torn writes, so splitting the write is safe.
++
++  @param[in] Buffer      Contents to write
++  @param[in] NumBytes    Number of bytes to write
++  @param[in] Offset      Offset into the RPMB file
++
++  @retval    EFI_SUCCESS Write ok
++  @retval    Other       Write failed
++**/
++STATIC
++EFI_STATUS
++WriteRpmb (
++  IN CONST UINT8 *Buffer,
++  IN UINTN       NumBytes,
++  IN UINTN       Offset
++  )
++{
++  EFI_STATUS  Status;
++  UINTN       Chunk;
++
++  while (NumBytes > 0) {
++    Chunk  = MIN (NumBytes, RPMB_BLOCK_SIZE - (Offset % RPMB_BLOCK_SIZE));
++    Status = ReadWriteRpmb (SP_SVC_RPMB_WRITE, (UINTN)Buffer, Chunk, Offset);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++
++    Buffer   += Chunk;
++    Offset   += Chunk;
++    NumBytes -= Chunk;
++  }
++
++  return EFI_SUCCESS;
++}
++
+ /**
+   The GetAttributes() function retrieves the attributes and
+   current settings of the block.
+@@ -372,12 +415,7 @@ OpTeeRpmbFvbWrite (
+   }
+   Base = (VOID *)(UINTN)Instance->MemBaseAddress + (Lba * Instance->BlockSize) +
+          Offset;
+-  Status = ReadWriteRpmb (
+-             SP_SVC_RPMB_WRITE,
+-             (UINTN)Buffer,
+-             *NumBytes,
+-             (Lba * Instance->BlockSize) + Offset
+-             );
++  Status = WriteRpmb (Buffer, *NumBytes, (Lba * Instance->BlockSize) + Offset);
+   if (EFI_ERROR (Status)) {
+     return Status;
+   }
+@@ -469,12 +507,7 @@ OpTeeRpmbFvbErase (
+     }
+     SetMem64 (Buf, NumLba * Instance->BlockSize, ~0UL);
+     // Write the device
+-    Status = ReadWriteRpmb (
+-               SP_SVC_RPMB_WRITE,
+-               (UINTN)Buf,
+-               NumBytes,
+-               Start * Instance->BlockSize
+-               );
++    Status = WriteRpmb (Buf, NumBytes, Start * Instance->BlockSize);
+     if (EFI_ERROR (Status)) {
+       FreePool (Buf);
+       return Status;
+@@ -669,7 +702,7 @@ InitializeFvAndVariableStoreHeaders (
+   VariableStoreHeader->Format = VARIABLE_STORE_FORMATTED;
+   VariableStoreHeader->State = VARIABLE_STORE_HEALTHY;
+ 
+-  Status = ReadWriteRpmb (SP_SVC_RPMB_WRITE, (UINTN)Headers, HeadersLength, 0);
++  Status = WriteRpmb (Headers, HeadersLength, 0);
+   if (EFI_ERROR (Status)) {
+     goto Exit;
+   }
+-- 
+2.56.0
+
