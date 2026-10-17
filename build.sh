@@ -119,6 +119,8 @@ function _build_optee() {
 
     if [ "${OPTEE_STORAGE}" != "ree" ]; then
         OPTEE_MAKE+=(CFG_RPMB_FS_DEV_ID=${OPTEE_RPMB_DEV_ID:-0})
+        # Every RPMB file open walks the FAT, cache it instead of rereading it from the eMMC
+        OPTEE_MAKE+=(CFG_RPMB_FS_CACHE_ENTRIES=128 CFG_CORE_HEAP_SIZE=196608)
     fi
 
     if ${RPMB_PROVISION}; then
