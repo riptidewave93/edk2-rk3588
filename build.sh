@@ -16,8 +16,11 @@ function _help(){
     echo "  --optee-enable              Start OP-TEE from open TF-A. Default: ${OPTEE_ENABLE}"
     echo "  --optee-flags \"FLAGS\"       Flags appended to the upstream OP-TEE build process."
     echo "  --optee-storage STORAGE     Upstream OP-TEE secure storage, 'ree', 'rpmb' or 'ree+rpmb'. Default: ${OPTEE_STORAGE}"
+    echo "                              'rpmb' and 'ree+rpmb' imply --optee upstream."
     echo "  --ftpm                      Embed the fTPM TA in upstream OP-TEE. Default: ${FTPM}"
+    echo "                              Implies --optee upstream --optee-enable."
     echo "  --rpmb-provision            One-time build that programs the eMMC RPMB key. Default: ${RPMB_PROVISION}"
+    echo "                              Implies --optee upstream --optee-enable, needs an RPMB --optee-storage."
     echo "  --edk2-flags \"FLAGS\"        Flags appended to the EDK2 build process."
     echo "  --skip-patchsets            Skip applying upstream submodule patchsets during development."
     echo "  -C, --clean                 Clean workspace and output."
@@ -435,6 +438,7 @@ TOOLCHAIN=GCC
 OPEN_TFA=true
 TFA_FLAGS=""
 OPTEE=vendor
+OPTEE_SET=false
 OPTEE_ENABLE=false
 OPTEE_FLAGS=""
 OPTEE_STORAGE=ree
@@ -461,7 +465,7 @@ while true; do
         -t|--toolchain) TOOLCHAIN="${2}"; shift 2 ;;
         --open-tfa) OPEN_TFA="${2}"; shift 2 ;;
         --tfa-flags) TFA_FLAGS="${2}"; shift 2 ;;
-        --optee) OPTEE="${2}"; shift 2 ;;
+        --optee) OPTEE="${2}"; OPTEE_SET=true; shift 2 ;;
         --optee-enable) OPTEE_ENABLE=true; shift ;;
         --optee-flags) OPTEE_FLAGS="${2}"; shift 2 ;;
         --optee-storage) OPTEE_STORAGE="${2}"; shift 2 ;;
@@ -487,6 +491,19 @@ if "${DISTCLEAN}"; then _distclean; exit "$?"; fi
 if "${CLEAN}"; then _clean; exit "$?"; fi
 
 [ -z "${DEVICE}" ] && _help 1
+[[ "${OPTEE_STORAGE}" =~ ^(ree|rpmb|ree\+rpmb)$ ]] || _error "Invalid OP-TEE storage '${OPTEE_STORAGE}'"
+if ${RPMB_PROVISION} && [ "${OPTEE_STORAGE}" == "ree" ]; then
+    _error "--rpmb-provision requires an RPMB --optee-storage"
+fi
+if ${FTPM} || ${RPMB_PROVISION}; then
+    OPTEE_ENABLE=true
+fi
+if ${FTPM} || ${RPMB_PROVISION} || [ "${OPTEE_STORAGE}" != "ree" ]; then
+    if ${OPTEE_SET} && [ "${OPTEE}" != "upstream" ]; then
+        _error "--ftpm, --rpmb-provision and RPMB storage require --optee upstream"
+    fi
+    OPTEE=upstream
+fi
 [[ "${OPTEE}" == "vendor" || "${OPTEE}" == "upstream" ]] || _error "Invalid OP-TEE source '${OPTEE}'"
 if ${OPTEE_ENABLE} && ! ${OPEN_TFA}; then
     _error "--optee-enable requires the open-source TF-A"
@@ -494,20 +511,7 @@ fi
 if ${OPTEE_ENABLE} && [ "${OPTEE}" == "vendor" ]; then
     echo "WARNING: The vendor OP-TEE relies on Rockchip BL31 extensions and panics open TF-A." >&2
 fi
-[[ "${OPTEE_STORAGE}" =~ ^(ree|rpmb|ree\+rpmb)$ ]] || _error "Invalid OP-TEE storage '${OPTEE_STORAGE}'"
-if [ "${OPTEE_STORAGE}" != "ree" ] && [ "${OPTEE}" != "upstream" ]; then
-    _error "--optee-storage requires --optee upstream"
-fi
-if ${FTPM} && [ "${OPTEE}" != "upstream" ]; then
-    _error "--ftpm requires --optee upstream"
-fi
-if ${FTPM} && ! ${OPTEE_ENABLE}; then
-    echo "WARNING: --ftpm without --optee-enable builds an fTPM that never runs." >&2
-fi
 if ${RPMB_PROVISION}; then
-    if [ "${OPTEE_STORAGE}" == "ree" ] || ! ${OPTEE_ENABLE}; then
-        _error "--rpmb-provision requires --optee-enable and an RPMB --optee-storage"
-    fi
     echo "WARNING: This image permanently programs the eMMC RPMB key. Boot it once, then flash a normal build." >&2
 fi
 [ -f "configs/${DEVICE}.conf" ] || [ "${DEVICE}" == "all" ] || _error "Device configuration not found"

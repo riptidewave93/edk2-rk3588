@@ -424,15 +424,15 @@ If you get build errors, it is very likely that you're still missing some depend
 ## OP-TEE and fTPM
 By default the firmware includes Rockchip's prebuilt OP-TEE but never starts it. To run upstream OP-TEE with a firmware TPM (fTPM):
 ```bash
-./build.sh --device rock-5b --optee upstream --optee-enable --ftpm
+./build.sh --device rock-5b --ftpm
 ```
 
 | Option                                | Description |
 | ------------------------------------- | ----------- |
 | `--optee vendor\|upstream`            | OP-TEE image to include. `vendor` (default) is the rkbin blob, `upstream` is built from the `optee_os` submodule. |
 | `--optee-enable`                      | Build TF-A with the OP-TEE dispatcher so OP-TEE actually runs. Requires the open-source TF-A. The vendor blob does not work with it. |
-| `--ftpm`                              | Embed the fTPM Trusted Application in upstream OP-TEE. |
-| `--optee-storage ree\|rpmb\|ree+rpmb` | Where OP-TEE keeps secure storage, including the fTPM state. Default: `ree`. |
+| `--ftpm`                              | Embed the fTPM Trusted Application in upstream OP-TEE. Implies `--optee upstream --optee-enable`. |
+| `--optee-storage ree\|rpmb\|ree+rpmb` | Where OP-TEE keeps secure storage, including the fTPM state. Default: `ree`. `rpmb` and `ree+rpmb` imply `--optee upstream`. |
 | `--optee-flags "FLAGS"`               | Extra flags for the upstream OP-TEE build. |
 
 When OP-TEE is running, the firmware adds a `/firmware/optee` node to the device tree. OP-TEE and the fTPM are therefore only available in Device Tree mode. Linux then exposes the fTPM as `/dev/tpm0`.
