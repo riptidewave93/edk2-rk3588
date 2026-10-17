@@ -31,6 +31,8 @@
 STATIC EFI_SD_MMC_PASS_THRU_PROTOCOL  *EmmcPassThru = NULL;
 STATIC UINT8                          EmmcSlot;
 STATIC EMMC_EXT_CSD                   ExtCsd;
+STATIC BOOLEAN                        mRpmbSelected;
+STATIC EFI_TPL                        mRpmbOldTpl;
 
 STATIC
 VOID
@@ -499,6 +501,17 @@ RpmbEmmcSetPartition (
   UINT8                                Value;
   UINT32                               DevStatus;
 
+  if (mRpmbSelected) {
+    return EFI_SUCCESS;
+  }
+
+  // EmmcDxe caches the selected partition, so return to whatever the card has selected now
+  Status = RpmbEmmcGetExtCsd (PassThru, Slot, &ExtCsd);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "%a: Failed to get ExtCsd %r\n", __FUNCTION__, Status));
+    return Status;
+  }
+
   Value  = ExtCsd.PartitionConfig;
   Value &= (UINT8) ~0x7;
   Value |= EmmcPartitionRPMB;
@@ -516,12 +529,41 @@ RpmbEmmcSetPartition (
   SdMmcCmdBlk.ResponseType    = SdMmcResponseTypeR1b;
   SdMmcCmdBlk.CommandArgument = (Value << 8) | (Offset << 16) | BIT24 | BIT25;
 
+  // OP-TEE hands interrupts back mid call, so keep events from doing block I/O on the RPMB partition
+  mRpmbOldTpl = gBS->RaiseTPL (MAX (EfiGetCurrentTpl (), TPL_CALLBACK));
+
   Status = PassThru->PassThru (PassThru, Slot, &Packet, NULL);
-  if (!EFI_ERROR (Status)) {
-    CopyMem (&DevStatus, &SdMmcStatusBlk.Resp0, sizeof (UINT32));
+  if (EFI_ERROR (Status)) {
+    gBS->RestoreTPL (mRpmbOldTpl);
+    return Status;
   }
 
+  CopyMem (&DevStatus, &SdMmcStatusBlk.Resp0, sizeof (UINT32));
+  mRpmbSelected = TRUE;
   return Status;
+}
+
+/**
+  Switch the eMMC back from the RPMB partition once an OP-TEE call is done.
+**/
+VOID
+OpteeRpmbRestorePartition (
+  VOID
+  )
+{
+  EFI_STATUS  Status;
+
+  if (!mRpmbSelected) {
+    return;
+  }
+
+  Status = RpmbEmmcClearPartition (EmmcPassThru, EmmcSlot);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "%a: Failed to restore the eMMC partition %r\n", __FUNCTION__, Status));
+  }
+
+  mRpmbSelected = FALSE;
+  gBS->RestoreTPL (mRpmbOldTpl);
 }
 
 /**
@@ -940,7 +982,6 @@ HandleRpmbDataReq (
   UINTN       NumReqFrames;
   UINTN       NumRespFrames;
   EFI_STATUS  Status;
-  EFI_STATUS  RestoreStatus;
 
   ReqFrame  = RpmbReq;
   RespFrame = RpmbResp;
@@ -954,13 +995,6 @@ HandleRpmbDataReq (
   NumReqFrames  = (ReqSize / RPMB_FRAME_SIZE);
   NumRespFrames = (RespSize / RPMB_FRAME_SIZE);
   BytesToUint16 (ReqFrame->Request, &Request);
-
-  // EmmcDxe caches the selected partition, so return to whatever the card has selected now
-  Status = RpmbEmmcGetExtCsd (PassThru, Slot, &ExtCsd);
-  if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: Failed to get ExtCsd %r\n", __FUNCTION__, Status));
-    goto Error;
-  }
 
   switch (Request) {
     case RPMB_MSG_TYPE_REQ_WRITE_COUNTER_VAL_READ:
@@ -989,14 +1023,6 @@ HandleRpmbDataReq (
       Status = EFI_INVALID_PARAMETER;
       goto Error;
       break;
-  }
-
-  RestoreStatus = RpmbEmmcClearPartition (PassThru, Slot);
-  if (EFI_ERROR (RestoreStatus)) {
-    DEBUG ((DEBUG_ERROR, "%a: Failed to restore the eMMC partition %r\n", __FUNCTION__, RestoreStatus));
-    if (!EFI_ERROR (Status)) {
-      Status = RestoreStatus;
-    }
   }
 
 Error:
