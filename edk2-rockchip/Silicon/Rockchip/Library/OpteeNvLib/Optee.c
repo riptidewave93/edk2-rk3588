@@ -598,6 +598,8 @@ OpteeCallWithArg (
     }
   }
 
+  OpteeRpmbRestorePartition ();
+
   return ArmSmcArgs.Arg0;
 }
 

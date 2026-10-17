@@ -105,4 +105,9 @@ typedef struct {
   UINT8    Request[2];
 } RPMB_FRAME;
 
+VOID
+OpteeRpmbRestorePartition (
+  VOID
+  );
+
 #endif // OPTEE_SMC_H_
